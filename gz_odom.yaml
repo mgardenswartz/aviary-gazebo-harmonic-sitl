@@ -1,0 +1,51 @@
+############################################################
+# This file is passed to the ros_gz_bridge parameter_bridge
+# to map gazebo topics to ros topics
+# Comment (select text and press CTRL+/ in VS Code)
+# or uncomment each block to bridge the odom topic for
+# multiple vehicles 
+############################################################
+- ros_topic_name: "/model/px4_1/odometry"
+  gz_topic_name: "/model/px4_1/odometry"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: true
+  direction: GZ_TO_ROS
+
+# - ros_topic_name: "/model/px4_2/odometry"
+#   gz_topic_name: "/model/px4_2/odometry"
+#   ros_type_name: "nav_msgs/msg/Odometry"
+#   gz_type_name: "gz.msgs.Odometry"
+#   subscriber_queue: 1
+#   publisher_queue: 1
+#   lazy: true
+#   direction: GZ_TO_ROS
+
+# - ros_topic_name: "/model/px4_3/odometry"
+#   gz_topic_name: "/model/px4_3/odometry"
+#   ros_type_name: "nav_msgs/msg/Odometry"
+#   gz_type_name: "gz.msgs.Odometry"
+#   subscriber_queue: 1
+#   publisher_queue: 1
+#   lazy: true
+#   direction: GZ_TO_ROS
+
+# - ros_topic_name: "/model/px4_4/odometry"
+#   gz_topic_name: "/model/px4_4/odometry"
+#   ros_type_name: "nav_msgs/msg/Odometry"
+#   gz_type_name: "gz.msgs.Odometry"
+#   subscriber_queue: 1
+#   publisher_queue: 1
+#   lazy: true
+#   direction: GZ_TO_ROS
+
+# - ros_topic_name: "/model/px4_5/odometry"
+#   gz_topic_name: "/model/px4_5/odometry"
+#   ros_type_name: "nav_msgs/msg/Odometry"
+#   gz_type_name: "gz.msgs.Odometry"
+#   subscriber_queue: 1
+#   publisher_queue: 1
+#   lazy: true
+#   direction: GZ_TO_ROS

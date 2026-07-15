@@ -1,0 +1,91 @@
+#!/bin/sh
+# shellcheck disable=SC2154
+
+#param set-default MAV_SYS_ID $((px4_instance+1))
+#param set-default IMU_INTEG_RATE 250
+
+# going to set up custom params to emulate indoor flight of sentinel vehicle
+
+# disable auto disarming for pre-takeoff timeout - only interferes 
+param set-default COM_DISARM_PRFLT -1
+
+# override the sim sensor enable params so we're only using vision 
+if [ "$PX4_SIM_SENSORS" = "vision" ]
+then
+    # turn off all sim sensors except vision
+	param set-default SENS_EN_GPSSIM 0
+    param set-default SENS_EN_ARSPDSIM 0
+    param set-default SENS_EN_BAROSIM 0
+    param set-default SENS_EN_MAGSIM 0
+
+    # tell px4 not to expect gps, mag, baro sensor input
+    param set-default SYS_HAS_BARO 0
+    param set-default SYS_HAS_GPS 0
+    param set-default SYS_HAS_MAG 0
+
+    # tell ekf to only use vision for everything and set rest of ekf config
+    param set-default EKF2_ABL_LIM 0.8
+    param set-default EKF2_BARO_CTRL 0
+    param set-default EKF2_EV_CTRL 15
+    param set-default EKF2_GPS_CHECK 0
+    param set-default EKF2_GPS_CTRL 0
+    param set-default EKF2_HGT_REF 3
+    param set-default EKF2_MAG_TYPE 5
+    param set-default EKF2_RNG_CTRL 0
+    param set-default SYS_MC_EST_GROUP 2
+
+    # tell attitude estimator to use external vision 
+    param set-default ATT_EXT_HDG_M 1
+
+    # disable all preflight checks that could prevent arming or set to max allowance
+    param set-default COM_ARM_EKF_HGT 1
+    param set-default COM_ARM_EKF_POS 1
+    param set-default COM_ARM_EKF_VEL 1
+    param set-default COM_ARM_EKF_YAW 1
+    param set-default COM_ARM_WO_GPS 1
+
+    # other params w/ default values that don't make sense for sim or are not default for the sentinel
+    param set-default COM_FLT_TIME_MAX -1
+    param set-default COM_LOW_BAT_ACT 0
+    param set-default COM_RCL_EXCEPT 31 
+    param set-default MPC_TKO_RAMP_T 1
+    param set-default MPC_XY_MAN_EXPO 0.45
+    param set-default MPC_YAW_EXPO 0.3
+    param set-default MPC_Z_MAN_EXPO 0.1
+
+    # in retrospect this seems like we would want to calibrate the joystick in QGC every time so we don't get any weird behavior
+    # the usb gamepad has left stick zero'd out at the center, where the RC controller these params map to has zero throttle at left stick down
+    # # manual control params to match sentinel params
+    # param set-default RC1_DZ 10
+    # param set-default RC1_MAX 1897
+    # param set-default RC1_MIN 1103
+    # param set-default RC1_REV -1 
+    # param set-default RC1_TRIM 1499
+    # param set-default RC2_DZ 10
+    # param set-default RC2_MAX 1897 
+    # param set-default RC2_MIN 1103
+    # param set-default RC2_REV 1
+    # param set-default RC2_TRIM 1500
+    # param set-default RC3_DZ 10
+    # param set-default RC3_MAX 1898
+    # param set-default RC3_MIN 1102
+    # param set-default RC3_REV 1
+    # param set-default RC3_TRIM 1102
+    # param set-default RC4_DZ 10
+    # param set-default RC4_MAX 1897
+    # param set-default RC4_MIN 1103
+    # param set-default RC4_REV -1
+    # param set-default RC4_TRIM 1501
+    # param set-default RC_MAP_PITCH 2
+    # param set-default RC_MAP_ROLL 1
+    # param set-default RC_MAP_THROTTLE 3
+    # param set-default RC_MAP_YAW 4
+
+
+    # optional (we'll add this later when we've updated the actual gazebo model) - update airframe parameters
+
+    # when we have the airframe updated we'll add the controller gain parameter settings here as well
+    # all the gains and velocity limits would need to be updated
+
+    # ^^ & ^ Note - Ignore. These params were moved to the airframe startup script for the sentinel model
+fi

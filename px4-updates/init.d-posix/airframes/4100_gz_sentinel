@@ -1,0 +1,126 @@
+#!/bin/sh
+#
+# @name Gazebo Sentinel
+#
+# @type Quadrotor
+#
+
+. ${R}etc/init.d/rc.mc_defaults
+
+PX4_SIMULATOR=${PX4_SIMULATOR:=gz}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=default}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=sentinel}
+
+param set-default SIM_GZ_EN 1
+
+param set-default SENS_EN_GPSSIM 1
+param set-default SENS_EN_BAROSIM 0
+param set-default SENS_EN_MAGSIM 1
+
+param set-default CA_AIRFRAME 0
+param set-default CA_ROTOR_COUNT 4
+
+param set-default CA_ROTOR0_PX 0.17
+param set-default CA_ROTOR0_PY 0.17
+param set-default CA_ROTOR0_KM  0.05
+param set-default CA_ROTOR0_AZ -1.0
+param set-default CA_ROTOR0_CT 6.5
+
+param set-default CA_ROTOR1_PX -0.17
+param set-default CA_ROTOR1_PY -0.17
+param set-default CA_ROTOR1_KM  0.05
+param set-default CA_ROTOR1_AZ -1.0
+param set-default CA_ROTOR1_CT 6.5
+
+param set-default CA_ROTOR2_PX 0.17
+param set-default CA_ROTOR2_PY -0.17
+param set-default CA_ROTOR2_KM -0.05
+param set-default CA_ROTOR2_AZ -1.0
+param set-default CA_ROTOR2_CT 6.5
+
+param set-default CA_ROTOR3_PX -0.17
+param set-default CA_ROTOR3_PY 0.17
+param set-default CA_ROTOR3_KM -0.05
+param set-default CA_ROTOR3_AZ -1.0
+param set-default CA_ROTOR3_CT 6.5
+
+param set-default SIM_GZ_EC_FUNC1 101
+param set-default SIM_GZ_EC_FUNC2 102
+param set-default SIM_GZ_EC_FUNC3 103
+param set-default SIM_GZ_EC_FUNC4 104
+
+param set-default SIM_GZ_EC_MIN1 150
+param set-default SIM_GZ_EC_MIN2 150
+param set-default SIM_GZ_EC_MIN3 150
+param set-default SIM_GZ_EC_MIN4 150
+
+param set-default SIM_GZ_EC_MAX1 1000
+param set-default SIM_GZ_EC_MAX2 1000
+param set-default SIM_GZ_EC_MAX3 1000
+param set-default SIM_GZ_EC_MAX4 1000
+
+param set-default MC_PITCH_P 5.5
+param set-default MC_ROLL_P 5.5
+param set-default MC_YAW_P 2.0
+
+param set-default MC_PITCHRATE_D 0.0
+param set-default MC_PITCHRATE_FF 0.0
+param set-default MC_PITCHRATE_I 0.4
+param set-default MC_PITCHRATE_K 1.0
+param set-default MC_PITCHRATE_MAX 150.0
+param set-default MC_PITCHRATE_P 0.08
+
+param set-default MC_ROLLRATE_D 0.0
+param set-default MC_ROLLRATE_FF 0.0
+param set-default MC_ROLLRATE_I 0.4
+param set-default MC_ROLLRATE_K 1.0
+param set-default MC_ROLLRATE_MAX 150.0
+param set-default MC_ROLLRATE_P 0.08
+
+param set-default MC_YAWRATE_D 0.0
+param set-default MC_YAWRATE_FF 0.0
+param set-default MC_YAWRATE_I 0.3
+param set-default MC_YAWRATE_K 1.0
+param set-default MC_YAWRATE_MAX 150.0
+param set-default MC_YAWRATE_P 0.13
+
+param set-default MPC_ACC_DOWN_MAX 3.0
+param set-default MPC_ACC_HOR 3.0
+param set-default MPC_ACC_HOR_MAX 6.0
+param set-default MPC_ACC_UP_MAX 3.0
+param set-default MPC_HOLD_MAX_XY 0
+param set-default MPC_HOLD_MAX_Z 0
+param set-default MPC_JERK_MAX 8.0
+param set-default MPC_MANTHR_MIN 0.12
+param set-default MPC_THR_HOVER 0.39
+param set-default MPC_THR_MAX 0.75
+param set-default MPC_THR_MIN 0.12
+param set-default MPC_TILTMAX_AIR 30.0
+param set-default MPC_TKO_RAMP_T 1.0
+param set-default MPC_VEL_MANUAL 3.0
+
+param set-default MPC_XY_CRUISE 3.0
+param set-default MPC_XY_P 0.95
+param set-default MPC_XY_TRAJ_P 0.5
+param set-default MPC_XY_VEL_D_ACC 0.0
+param set-default MPC_XY_VEL_I_ACC 0.1
+param set-default MPC_XY_VEL_MAX 3.0
+param set-default MPC_XY_VEL_P_ACC 3.0
+
+param set-default MPC_XY_MAN_EXPO 0.45
+param set-default MPC_YAW_EXPO 0.3
+param set-default MPC_Z_MAN_EXPO 0.1
+
+param set-default MPC_Z_P 1.0
+param set-default MPC_Z_VEL_ALL -3.0
+param set-default MPC_Z_VEL_D_ACC 0.0
+param set-default MPC_Z_VEL_I_ACC 2.0
+param set-default MPC_Z_VEL_MAX_DN 1.0
+param set-default MPC_Z_VEL_MAX_UP 1.0
+param set-default MPC_Z_VEL_P_ACC 8.0
+param set-default MPC_Z_V_AUTO_DN 1.0
+param set-default MPC_Z_V_AUTO_UP 1.0
+
+param set-default SIM_BAT_DRAIN 120
+param set-default SIM_BAT_MIN_PCT 60.0
+
