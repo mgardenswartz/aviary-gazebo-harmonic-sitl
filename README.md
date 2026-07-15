@@ -4,8 +4,7 @@ Author: Joe Lullo
 
 > [!'NOTE']
 > These instructions require a Docker container with Ubuntu 22.04 and ROS 2 Humble installed.
-> These instructions include scripts that outside Docker that are Linux only. Mac and Windows are not supported (unless you want to write the bash scripts over again).
-
+> These instructions include scripts that run outside Docker that are Linux only. Mac and Windows are not supported (unless you want to write the bash scripts over again).
 
 ## Building the sim environment
 
