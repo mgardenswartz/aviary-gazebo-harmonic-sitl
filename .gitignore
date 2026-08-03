@@ -242,4 +242,5 @@ AMENT_IGNORE
 ros2_ws/install
 ros2_ws/log
 ros2_ws/build
-
+voxl-px4/
+.DS_Store
