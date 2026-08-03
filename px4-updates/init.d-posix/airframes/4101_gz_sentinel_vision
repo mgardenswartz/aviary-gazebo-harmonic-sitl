@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# @name Gazebo x500 vision
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=sentinel_vision}
+
+PX4_SIM_SENSORS=${PX4_SIM_SENSORS:=vision}
+
+. ${R}etc/init.d-posix/airframes/4100_gz_sentinel
