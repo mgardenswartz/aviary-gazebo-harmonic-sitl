@@ -54,10 +54,11 @@ param set-default SIM_GZ_EC_MIN2 150
 param set-default SIM_GZ_EC_MIN3 150
 param set-default SIM_GZ_EC_MIN4 150
 
-param set-default SIM_GZ_EC_MAX1 1000
-param set-default SIM_GZ_EC_MAX2 1000
-param set-default SIM_GZ_EC_MAX3 1000
-param set-default SIM_GZ_EC_MAX4 1000
+# updated max motor speed
+param set-default SIM_GZ_EC_MAX1 733
+param set-default SIM_GZ_EC_MAX2 733
+param set-default SIM_GZ_EC_MAX3 733
+param set-default SIM_GZ_EC_MAX4 733
 
 param set-default MC_PITCH_P 5.5
 param set-default MC_ROLL_P 5.5
@@ -124,3 +125,12 @@ param set-default MPC_Z_V_AUTO_UP 1.0
 param set-default SIM_BAT_DRAIN 120
 param set-default SIM_BAT_MIN_PCT 60.0
 
+# updated battery params
+param set-default BAT1_CAPACITY 5000
+param set-default BAT1_N_CELLS 3
+param set-default BAT1_R_INTERNAL 0.0030
+param set-default BAT1_V_CHARGED 4.15
+param set-default BAT1_V_EMPTY 3.5
+
+# updated thrust model
+param set-default THR_MDL_FAC 0.8

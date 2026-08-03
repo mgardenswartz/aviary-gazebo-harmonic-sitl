@@ -6,7 +6,8 @@
     <static>false</static>
     <link name="base_link">
       <inertial>
-        <mass>1.347</mass>
+        <!-- actual mass is 1.361kg but we lower it to account for mass assigned to motors -->
+        <mass>1.29669230769231</mass>
         <inertia>
           <ixx>0.02166666666666667</ixx>
           <ixy>0</ixy>
