@@ -1,0 +1,35 @@
+/**:
+  debugging_node:
+    ros__parameters:
+      # Basic simulation parameters
+      vehicle_name: "px4_1"          # namespace prefix used on all fmu/in and fmu/out topics
+      control_freq_hz: 50.0          # rate of the main PID control loop
+      save_data: true                # write time/position/error/control history to CSV on shutdown
+      run_length_s: 30.0             # safety watchdog: max time allowed to reach TAKEOFF, then to settle it
+      init_tol_m: 0.15               # takeoff is considered "settled" once ||qd - q|| <= this
+      init_z_m_ned: -1.0             # target takeoff altitude, NED z (negative = up), i.e. climb to 2m AGL
+
+      # Step input experiment
+      step_input_delay_s: 0.2        # wait after entering STATE_STEP_INPUT before sending the accel command
+      step_input_accel_x_mps2: 0.0
+      step_input_accel_y_mps2: 1.0
+      step_input_accel_z_mps2: 0.0
+      heartbeat_cutoff_delay_s: 2.0  # time after the step input is sent before the heartbeat is dropped
+
+      # Safety
+      mpc_acc_hor_max_mps2: 6.0      # matches PX4 MPC_ACC_HOR_MAX; horizontal accel command saturation
+      mpc_acc_vert_max_mps2: 3.0     # matches PX4 MPC_ACC_UP_MAX; vertical accel command saturation
+      safe_x_min_m_ned: -5.0
+      safe_x_max_m_ned: 5.0
+      safe_y_min_m_ned: -5.0
+      safe_y_max_m_ned: 5.0
+      safe_z_min_m_ned: -3.0         # most negative (highest) altitude allowed
+      safe_z_max_m_ned: 0.2          # least negative (lowest) altitude allowed, i.e. just below ground
+      offboard_mode_heartbeat_freq_hz: 10.0  # must stay > 2 Hz or PX4 will exit OFFBOARD
+      odom_timeout_s: 0.5            # raise OdomTimeoutError if no VehicleOdometry for this long
+      odom_watchdog_freq_hz: 5.0     # rate at which the odometry watchdog checks for staleness
+
+      # Control (position-error -> acceleration-setpoint PID, applied per-axis in NED)
+      k_p: 5.0
+      k_i: 0.8
+      k_d: 3.0
