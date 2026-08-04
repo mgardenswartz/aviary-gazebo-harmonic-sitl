@@ -282,6 +282,7 @@ class DebuggingNode(Node):
         msg.yaw = 0.0
 
         self.trajectory_setpoint_pub.publish(msg)
+        # TODO: Does this only work if the heartbeat is set to velocity, not acceleration?
 
     def write_csv(self) -> None:
         # You can either dump the CSV all at once at the end or periodically (at a specified rate to not slow down the control). TODO: Update to periodically.
@@ -516,7 +517,6 @@ def main(args: Optional[List[str]] = None) -> None:
             print("[INFO] Node cleanly destroyed.")
         else:
             print("[FATAL] Node not cleanly destroyed.")
-            # TODO: what do I do??
 
         node.destroy_node()
         rclpy.shutdown()

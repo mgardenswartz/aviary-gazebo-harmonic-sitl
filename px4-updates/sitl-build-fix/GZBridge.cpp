@@ -602,64 +602,14 @@ void GZBridge::odometryCallback(const gz::msgs::OdometryWithCovariance &odometry
 		updateClock(odometry.header().stamp().sec(), odometry.header().stamp().nsec());
 	}
 
-	vehicle_odometry_s odom{};
-#if defined(ENABLE_LOCKSTEP_SCHEDULER)
-	odom.timestamp_sample = time_us;
-	odom.timestamp = time_us;
-#else
-	odom.timestamp_sample = hrt_absolute_time();
-	odom.timestamp = hrt_absolute_time();
-#endif
-
-	// gz odometry position is in ENU frame and needs to be converted to NED
-	odom.pose_frame = vehicle_odometry_s::POSE_FRAME_NED;
-	odom.position[0] = odometry.pose_with_covariance().pose().position().y();
-	odom.position[1] = odometry.pose_with_covariance().pose().position().x();
-	odom.position[2] = -odometry.pose_with_covariance().pose().position().z();
-
-	// gz odometry orientation is "body FLU->ENU" and needs to be converted in "body FRD->NED"
-	gz::msgs::Quaternion pose_orientation = odometry.pose_with_covariance().pose().orientation();
-	gz::math::Quaterniond q_gr = gz::math::Quaterniond(
-					     pose_orientation.w(),
-					     pose_orientation.x(),
-					     pose_orientation.y(),
-					     pose_orientation.z());
-	gz::math::Quaterniond q_nb;
-	GZBridge::rotateQuaternion(q_nb, q_gr);
-	odom.q[0] = q_nb.W();
-	odom.q[1] = q_nb.X();
-	odom.q[2] = q_nb.Y();
-	odom.q[3] = q_nb.Z();
-
-	// gz odometry linear velocity is in body FLU and needs to be converted in body FRD
-	odom.velocity_frame = vehicle_odometry_s::VELOCITY_FRAME_BODY_FRD;
-	odom.velocity[0] = odometry.twist_with_covariance().twist().linear().x();
-	odom.velocity[1] = -odometry.twist_with_covariance().twist().linear().y();
-	odom.velocity[2] = -odometry.twist_with_covariance().twist().linear().z();
-
-	// gz odometry angular velocity is in body FLU and need to be converted in body FRD
-	odom.angular_velocity[0] = odometry.twist_with_covariance().twist().angular().x();
-	odom.angular_velocity[1] = -odometry.twist_with_covariance().twist().angular().y();
-	odom.angular_velocity[2] = -odometry.twist_with_covariance().twist().angular().z();
-
-	// VISION_POSITION_ESTIMATE covariance
-	//  pose 6x6 cross-covariance matrix
-	//  (states: x, y, z, roll, pitch, yaw).
-	//  If unknown, assign NaN value to first element in the array.
-	odom.position_variance[0] = odometry.pose_with_covariance().covariance().data(7);  // Y  row 1, col 1
-	odom.position_variance[1] = odometry.pose_with_covariance().covariance().data(0);  // X  row 0, col 0
-	odom.position_variance[2] = odometry.pose_with_covariance().covariance().data(14); // Z  row 2, col 2
-
-	odom.orientation_variance[0] = odometry.pose_with_covariance().covariance().data(21); // R  row 3, col 3
-	odom.orientation_variance[1] = odometry.pose_with_covariance().covariance().data(28); // P  row 4, col 4
-	odom.orientation_variance[2] = odometry.pose_with_covariance().covariance().data(35); // Y  row 5, col 5
-
-	odom.velocity_variance[0] = odometry.twist_with_covariance().covariance().data(7);  // Y  row 1, col 1
-	odom.velocity_variance[1] = odometry.twist_with_covariance().covariance().data(0);  // X  row 0, col 0
-	odom.velocity_variance[2] = odometry.twist_with_covariance().covariance().data(14); // Z  row 2, col 2
-
-	// odom.reset_counter = vpe.reset_counter;
-	_visual_odometry_pub.publish(odom);
+	// This callback used to build a vehicle_odometry_s from Gazebo ground truth (ENU/FLU
+	// converted to NED/FRD, per rotateQuaternion() below) and publish it directly to
+	// vehicle_visual_odometry, bypassing ROS 2/DDS entirely -- PX4's native, noiseless,
+	// zero-latency "external vision" path. That silently won over any noisy/jittered
+	// publisher on the ROS 2 side (the vision_odometry_noise node), since EKF2 subscribes
+	// to a single default uORB instance and this one registered first. Removed so that
+	// node is the sole source of vehicle_visual_odometry. The time_us/updateClock() sync
+	// above is unrelated and still needed, so it stays.
 
 	pthread_mutex_unlock(&_node_mutex);
 }

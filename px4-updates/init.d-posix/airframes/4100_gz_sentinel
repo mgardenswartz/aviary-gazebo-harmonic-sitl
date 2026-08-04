@@ -136,11 +136,17 @@ param set-default BAT1_V_EMPTY 3.5
 param set-default THR_MDL_FAC 0.8
 
 # prepare to add noise to the sim
-param set-default EKF2_EV_CTRL 15
-param set-default EKF2_EVP_NOISE 1 #cm...I hope
-param set-default EKF2_EVV_NOISE 2 #cm/s...I hope
-param set-default EKF2_EVA_NOISE 001 #rad...I hope
-param set-default EKF2_MAG_TYPE 5 # none; disable magnetometer since we're simulating an indoor environment with mocap
-param set-default EKF2_EV_NOISE_MD 0 # ignore incoming covariances and use hardcoded ones in PX4 params
-param set-default EKF2_EV_DELAY 13.9 #ms...I hope. Measured by Cristian Nino in lab
+# Units/semantics verified directly against src/modules/ekf2/ekf2_params.c in this branch.
+param set-default EKF2_EV_CTRL 15 # bitmask: horiz pos + vert pos + 3D vel + yaw (matches compiled default)
+param set-default EKF2_EVP_NOISE 0.01 # m. Was "1" and labeled cm -- EKF2_EVP_NOISE is in meters, so that was 100x too large.
+param set-default EKF2_EVV_NOISE 0.02 # m/s. Was "2" and labeled cm/s -- EKF2_EVV_NOISE is in m/s, so that was 100x too large.
+# rad. Was "001" (=1, missing the decimal point). NOTE: PX4 documents @min 0.05 rad for this param --
+# 0.01 is below that floor. Kept at 0.01 to match sensor_noise_profile.json exactly; verify PX4 doesn't
+# silently clamp or reject it at runtime.
+param set-default EKF2_EVA_NOISE 0.01
+param set-default EKF2_MAG_TYPE 5 # none; disable magnetometer since we're simulating an indoor environment with mocap. Already correct (verified: @value 5 None).
+# Was "0", which does the opposite of the comment: 0 = trust the message's own reported covariance,
+# using EKF2_EVx_NOISE only as a lower bound. 1 = ignore message covariance, use EKF2_EVx_NOISE directly.
+param set-default EKF2_EV_NOISE_MD 1
+param set-default EKF2_EV_DELAY 13.9 # ms. Measured by Cristian Nino in lab. Unit already correct (verified: @unit ms).
 
