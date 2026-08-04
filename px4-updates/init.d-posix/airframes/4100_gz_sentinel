@@ -134,3 +134,13 @@ param set-default BAT1_V_EMPTY 3.5
 
 # updated thrust model
 param set-default THR_MDL_FAC 0.8
+
+# prepare to add noise to the sim
+param set-default EKF2_EV_CTRL 15
+param set-default EKF2_EVP_NOISE 1 #cm...I hope
+param set-default EKF2_EVV_NOISE 2 #cm/s...I hope
+param set-default EKF2_EVA_NOISE 001 #rad...I hope
+param set-default EKF2_MAG_TYPE 5 # none; disable magnetometer since we're simulating an indoor environment with mocap
+param set-default EKF2_EV_NOISE_MD 0 # ignore incoming covariances and use hardcoded ones in PX4 params
+param set-default EKF2_EV_DELAY 13.9 #ms...I hope. Measured by Cristian Nino in lab
+

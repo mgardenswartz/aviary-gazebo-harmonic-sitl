@@ -118,15 +118,9 @@ class DebuggingNode(Node):
         self.position_history: List[List[float]] = []
         self.qd_history: List[List[float]] = []
 
-        fast_qos_profile: QoSProfile = QoSProfile(
+        qos_profile: QoSProfile = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
-            depth=1,
-            history=HistoryPolicy.KEEP_LAST
-        )
-        critical_qos_profile: QoSProfile = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
             depth=1,
             history=HistoryPolicy.KEEP_LAST
         )
@@ -134,30 +128,30 @@ class DebuggingNode(Node):
         self.offboard_control_mode_pub = self.create_publisher(
             msg_type=OffboardControlMode,
             topic=f'/{self.vehicle_name}/fmu/in/offboard_control_mode',
-            qos_profile=fast_qos_profile
+            qos_profile=qos_profile
         )
         self.trajectory_setpoint_pub = self.create_publisher(
             msg_type=TrajectorySetpoint,
             topic=f'/{self.vehicle_name}/fmu/in/trajectory_setpoint',
-            qos_profile=fast_qos_profile
+            qos_profile=qos_profile
         )
         self.vehicle_command_pub = self.create_publisher(
             msg_type=VehicleCommand,
             topic=f'/{self.vehicle_name}/fmu/in/vehicle_command',
-            qos_profile=critical_qos_profile # Ensures land/takeoff will be received
+            qos_profile=qos_profile
         )
 
         self.status_sub = self.create_subscription(
             msg_type=VehicleStatus,
             topic=f'/{self.vehicle_name}/fmu/out/vehicle_status',
             callback=self.vehicle_status_callback,
-            qos_profile=fast_qos_profile
+            qos_profile=qos_profile
         )
         self.odom_sub = self.create_subscription(
             msg_type=VehicleOdometry,
             topic=f'/{self.vehicle_name}/fmu/out/vehicle_odometry',
             callback=self.odom_callback,
-            qos_profile=fast_qos_profile
+            qos_profile=qos_profile
         )
 
         self.control_timer = self.create_timer(
@@ -217,6 +211,7 @@ class DebuggingNode(Node):
         elapsed_s = self.get_clock().now().nanoseconds / 1e9 - self.last_odom_ros_time_s
 
         if elapsed_s >= self.odom_timeout_s:
+            self.publish_trajectory_setpoint_stop()
             raise OdomTimeoutError(f"No odometry received for {elapsed_s:.1f}s.")
 
 
@@ -262,6 +257,29 @@ class DebuggingNode(Node):
         msg.position = [float('nan'), float('nan'), float('nan')]
         msg.velocity = [float('nan'), float('nan'), float('nan')]
         msg.yaw = 0.0  # Command a heading of 0.0 always
+
+        self.trajectory_setpoint_pub.publish(msg)
+
+    def publish_trajectory_setpoint_stop(self) -> None:
+        # Only ever call this right before handing control away on an unintended
+        # fault (never on the deliberate STATE_STEP_INPUT/STATE_FINISH_UP path).
+        # mc_pos_control keeps consuming the last trajectory_setpoint it saw for at
+        # least one cycle after OFFBOARD is left (position control stays enabled
+        # across an OFFBOARD->Land/Hold transition, so PX4's own
+        # stale-setpoint-clearing logic doesn't trigger on it) -- leaving an
+        # acceleration setpoint as that last message risks it getting applied under
+        # a controller no longer expecting open-loop acceleration input. A
+        # zero-velocity setpoint is safe to leave stale; it mirrors what PX4's own
+        # generateFailsafeSetpoint() falls back to.
+        if self.latest_odom is None:
+            return
+
+        msg: TrajectorySetpoint = TrajectorySetpoint()
+        msg.timestamp = self.latest_odom.timestamp
+        msg.acceleration = [float('nan'), float('nan'), float('nan')]
+        msg.position = [float('nan'), float('nan'), float('nan')]
+        msg.velocity = [0.0, 0.0, 0.0]
+        msg.yaw = 0.0
 
         self.trajectory_setpoint_pub.publish(msg)
 
@@ -365,6 +383,15 @@ class DebuggingNode(Node):
 
         now_s: float = self.get_clock().now().nanoseconds / 1e9
 
+        # Runs every tick regardless of state, including STATE_DONE, so a boundary
+        # breach still cuts the experiment short even during the deliberate
+        # hands-off post-heartbeat-cutoff phase.
+        q: np.ndarray = np.array(object=self.latest_odom.position, dtype=np.float64)
+        boundary_err: Optional[str] = self.check_safety_boundary(position=q)
+        if boundary_err is not None:
+            self.publish_trajectory_setpoint_stop()
+            raise BoundaryBreachError(boundary_err)
+
         match self.experiment_state:
             case ExperimentState.STATE_INIT:
                 # Must publish setpoints with a TrajectorySetpoint otherwise transition to Offboard will be declined
@@ -406,17 +433,14 @@ class DebuggingNode(Node):
 
             case ExperimentState.STATE_TAKEOFF:
                 if not self.in_offboard_mode:
+                    self.publish_trajectory_setpoint_stop()
                     raise FailsafeTriggeredError("PX4 left OFFBOARD mode during takeoff.")
 
                 if now_s - self.heartbeat_raised_time_s > self.run_length_s:
+                    self.publish_trajectory_setpoint_stop()
                     raise FailsafeTriggeredError(
                         f"Takeoff did not settle within run_length_s={self.run_length_s:.1f}s of the heartbeat being raised."
                     )
-
-                q: np.ndarray = np.array(object=self.latest_odom.position, dtype=np.float64)
-                boundary_err: Optional[str] = self.check_safety_boundary(position=q)
-                if boundary_err is not None:
-                    raise BoundaryBreachError(boundary_err)
 
                 qd, qd_dot, qd_ddot = self.get_desired_state()
                 u: np.ndarray = self.run_pid(qd=qd, qd_dot=qd_dot, dt=self.control_period_s) + qd_ddot
@@ -435,6 +459,7 @@ class DebuggingNode(Node):
 
             case ExperimentState.STATE_STEP_INPUT:
                 if not self.in_offboard_mode:
+                    self.publish_trajectory_setpoint_stop()
                     raise FailsafeTriggeredError("PX4 left OFFBOARD mode before the step input was sent.")
 
                 # Step 5: wait step_input_delay_s, then send exactly one acceleration
