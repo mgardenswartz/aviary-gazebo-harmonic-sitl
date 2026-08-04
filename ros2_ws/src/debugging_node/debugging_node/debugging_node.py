@@ -73,6 +73,8 @@ class DebuggingNode(Node):
         self.odom_timeout_s: float = self.get_parameter(name='odom_timeout_s').value
         odom_watchdog_freq_hz: float = self.get_parameter(name='odom_watchdog_freq_hz').value
         odom_watchdog_period_s = 1.0 / odom_watchdog_freq_hz
+        mode_publisher_freq_hz: float = self.get_parameter(name='mode_publisher_freq_hz').value
+        self.mode_publisher_period_s = 1.0 / mode_publisher_freq_hz
 
         # Control
         self.k_p: float = self.get_parameter(name='k_p').value
@@ -101,11 +103,11 @@ class DebuggingNode(Node):
         self.experiment_state: int = ExperimentState.STATE_INIT
 
         # Per-state timestamps, set as the state machine transitions
-        self.heartbeat_raised_time_s: float = 0.0
         self.last_mode_cmd_time_s: float = 0.0
         self.takeoff_entry_time_s: float = 0.0
         self.step_input_entry_time_s: float = 0.0
         self.finish_up_entry_time_s: float = 0.0
+        self.heartbeat_stopped_time_s: Optional[float] = None
 
         self.reset_integral()
 
@@ -171,9 +173,7 @@ class DebuggingNode(Node):
             callback=self.offboard_heartbeat_callback
         )
 
-        # Step 1: raise the heartbeat flag immediately so PX4 will accept an external
-        # OFFBOARD mode switch (commanded via RC/QGC) as soon as it's requested.
-        self.publish_offboard_heartbeat = True
+        self.publish_offboard_heartbeat = False
         self.heartbeat_raised_time_s = self.get_clock().now().nanoseconds / 1e9
 
         self.get_logger().info(f"Node Initialized Successfully. Offboard heartbeat raised; waiting for OFFBOARD mode confirmation.")
@@ -185,11 +185,22 @@ class DebuggingNode(Node):
         self.landing_command_sent = True
 
     def vehicle_status_callback(self, msg: VehicleStatus) -> None:
+        was_in_offboard_mode: bool = self.in_offboard_mode
+
         self.nav_state = msg.nav_state
         self.is_armed = (msg.arming_state == VehicleStatus.ARMING_STATE_ARMED)
         self.in_offboard_mode = (msg.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD)
         self.vehicle_system_id = msg.system_id
         self.vehicle_component_id = msg.component_id
+
+        if was_in_offboard_mode and not self.in_offboard_mode:
+            now_s: float = self.get_clock().now().nanoseconds / 1e9
+            if self.heartbeat_stopped_time_s is not None:
+                self.get_logger().info(
+                    f"PX4 exited OFFBOARD mode {now_s - self.heartbeat_stopped_time_s:.3f}s after the heartbeat was stopped."
+                )
+            else:
+                self.get_logger().info(f"PX4 exited OFFBOARD mode at t={now_s:.3f}s (heartbeat was still active).")
 
     def odom_callback(self, msg: VehicleOdometry) -> None:
         self.latest_odom = msg
@@ -356,8 +367,8 @@ class DebuggingNode(Node):
 
         match self.experiment_state:
             case ExperimentState.STATE_INIT:
-                # We hold a zero-acceleration setpoint here so the switch succeeds
-                # even though "the experiment" hasn't logically started yet.
+                # Must publish setpoints with a TrajectorySetpoint otherwise transition to Offboard will be declined
+                self.publish_offboard_heartbeat = True
                 self.publish_trajectory_setpoint_acceleration(ax=0.0, ay=0.0, az=0.0)
 
                 if now_s - self.heartbeat_raised_time_s > self.run_length_s:
@@ -367,7 +378,7 @@ class DebuggingNode(Node):
 
                 # SITL-only: there's no RC pilot / QGC operator to arm and flip the mode
                 # switch, so this node has to do both itself. On real hardware this whole
-                # block is unnecessary -- the node would just wait, as it originally did.
+                # block is unnecessary -- the node would just wait for offboard.
                 #
                 # NOTE: PX4 will not accept an arm command until it is already switching
                 # into OFFBOARD (it rejects COMPONENT_ARM_DISARM while sitting in
@@ -376,7 +387,7 @@ class DebuggingNode(Node):
                 # arming itself depends on the switch being in flight.
                 if not (self.is_armed and self.in_offboard_mode):
                     self.get_logger().info("Waiting for ARM + OFFBOARD mode switch...", throttle_duration_sec=2.0)
-                    if now_s - self.last_mode_cmd_time_s > 1.0:
+                    if now_s - self.last_mode_cmd_time_s > self.mode_publisher_period_s:
                         # param1=1.0 -> MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, param2=6.0 -> PX4 custom main mode OFFBOARD
                         self.publish_vehicle_command(command=VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
                         if not self.is_armed:
@@ -407,15 +418,18 @@ class DebuggingNode(Node):
                 if boundary_err is not None:
                     raise BoundaryBreachError(boundary_err)
 
-                qd, qd_dot, _qd_ddot = self.get_desired_state()
-                u: np.ndarray = self.run_pid(qd=qd, qd_dot=qd_dot, dt=self.control_period_s)
+                qd, qd_dot, qd_ddot = self.get_desired_state()
+                u: np.ndarray = self.run_pid(qd=qd, qd_dot=qd_dot, dt=self.control_period_s) + qd_ddot
                 self.publish_trajectory_setpoint_acceleration(ax=u[0], ay=u[1], az=u[2])
 
-                # Step 4: transition once within init_tol_m of the full desired state
-                # (position vector norm, not just the z-component).
+                # Transition once within init_tol_m of the full desired state
+                # (position vector norm, not just the z-component)
                 error_norm: float = float(np.linalg.norm(qd - q))
                 if error_norm <= self.init_tol_m:
-                    self.get_logger().info(f"TAKEOFF SETTLED (error={error_norm:.3f}m <= tol={self.init_tol_m:.3f}m).")
+                    self.get_logger().info(
+                        f"TAKEOFF SETTLED after {now_s - self.takeoff_entry_time_s:.3f}s "
+                        f"(error={error_norm:.2f}m <= tol={self.init_tol_m:.2f}m)."
+                    )
                     self.experiment_state = ExperimentState.STATE_STEP_INPUT
                     self.step_input_entry_time_s = now_s
 
@@ -428,7 +442,10 @@ class DebuggingNode(Node):
                 if now_s - self.step_input_entry_time_s >= self.step_input_delay_s:
                     ax, ay, az = self.step_input_accel_mps2
                     self.publish_trajectory_setpoint_acceleration(ax=ax, ay=ay, az=az)
-                    self.get_logger().info(f"Step input sent: accel=[{ax:.2f}, {ay:.2f}, {az:.2f}] m/s^2. No further setpoints will be sent.")
+                    self.get_logger().info(
+                        f"Step input sent {now_s - self.step_input_entry_time_s:.3f}s after settling: "
+                        f"accel=[{ax:.2f}, {ay:.2f}, {az:.2f}] m/s^2. No further setpoints will be sent."
+                    )
                     self.experiment_state = ExperimentState.STATE_FINISH_UP
                     self.finish_up_entry_time_s = now_s
 
@@ -436,9 +453,10 @@ class DebuggingNode(Node):
                 # No TrajectorySetpoint messages are sent here; only the heartbeat continues.
                 if now_s - self.finish_up_entry_time_s >= self.heartbeat_cutoff_delay_s:
                     self.publish_offboard_heartbeat = False
+                    self.heartbeat_stopped_time_s = now_s
                     self.get_logger().info(
-                        f"Heartbeat stopped {self.heartbeat_cutoff_delay_s:.1f}s after the step input. "
-                        f"Waiting for the vehicle to respond (Ctrl+C to exit)."
+                        f"Heartbeat stopped {now_s - self.finish_up_entry_time_s:.3f}s after the step input. "
+                        f"Waiting for PX4 to exit OFFBOARD (Ctrl+C to exit)."
                     )
                     self.experiment_state = ExperimentState.STATE_DONE
 

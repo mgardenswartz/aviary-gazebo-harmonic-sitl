@@ -19,15 +19,16 @@
       # Safety
       mpc_acc_hor_max_mps2: 6.0      # matches PX4 MPC_ACC_HOR_MAX; horizontal accel command saturation
       mpc_acc_vert_max_mps2: 3.0     # matches PX4 MPC_ACC_UP_MAX; vertical accel command saturation
-      safe_x_min_m_ned: -5.0
       safe_x_max_m_ned: 5.0
-      safe_y_min_m_ned: -5.0
-      safe_y_max_m_ned: 5.0
-      safe_z_min_m_ned: -3.0         # most negative (highest) altitude allowed
-      safe_z_max_m_ned: 0.2          # least negative (lowest) altitude allowed, i.e. just below ground
+      safe_x_min_m_ned: -5.0
+      safe_y_max_m_ned: 11.5
+      safe_y_min_m_ned: -11.5
+      safe_z_max_m_ned: 0.1
+      safe_z_min_m_ned: -6.5
       offboard_mode_heartbeat_freq_hz: 10.0  # must stay > 2 Hz or PX4 will exit OFFBOARD
       odom_timeout_s: 0.5            # raise OdomTimeoutError if no VehicleOdometry for this long
       odom_watchdog_freq_hz: 5.0     # rate at which the odometry watchdog checks for staleness
+      mode_publisher_freq_hz: 1.0    # How often to rebublish a mode switch if not accepted
 
       # Control (position-error -> acceleration-setpoint PID, applied per-axis in NED)
       k_p: 5.0
