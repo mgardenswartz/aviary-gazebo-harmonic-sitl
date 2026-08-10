@@ -91,6 +91,24 @@
           <diffuse>0.1 0.3 0.8 1</diffuse>
         </material>
       </visual>
+      <!-- Spin marker: a bright stripe running the full height of the cylinder, offset to one
+           side. Purely visual, no collision/inertial effect. If it stays pointing the same
+           absolute direction while the payload moves around its orbit, that's pure revolution
+           (no self-spin). If it visibly rotates in place, that's real spin about the payload's
+           own long axis (the nRabsR term below, the one whose drag coefficient is the least
+           trustworthy of the three — see the comment above the Hydrodynamics plugins). -->
+      <visual name="slung_load_spin_marker">
+        <pose>0.038000000000000006 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.006 0.012 0.2</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1.0 0.55 0.0 1</ambient>
+          <diffuse>1.0 0.55 0.0 1</diffuse>
+        </material>
+      </visual>
     </link>
 
     <joint name="rod_bottom_pivot" type="ball">
@@ -112,7 +130,16 @@
     <!-- Real aerodynamic quadratic drag (Fossen model, force = coeff * v*|v| per axis), derived
          from each link's own crossflow/end-cap area in air — see generate-slung-load-model.py.
          Verified parameter names against /usr/share/gz/gz-sim8/worlds/auv_controls.sdf on this
-         host (an installed gz-sim demo world), not guessed from memory. -->
+         host (an installed gz-sim demo world), not guessed from memory.
+
+         xUabsU/yVabsV/zWabsW (translational) are solidly derived from real drag-equation
+         geometry. kPabsP/mQabsQ/nRabsR (rotational) are weaker: kP/mQ (tumbling end-over-end)
+         use a real strip-theory crossflow derivation, but nR (spin about the cylinder's own
+         long axis, i.e. literally spinning like a top) is physically a different, much weaker
+         skin-friction mechanism that was NOT separately derived — all three currently share the
+         same tumbling-based formula, scaled by ROTATIONAL_DRAG_MULTIPLIER as an openly pragmatic
+         (not first-principles) knob, since the raw derived values are tiny (~1e-6) and self-spin
+         specifically was observed to persist for minutes without visibly decaying. -->
     <plugin
       filename="gz-sim-hydrodynamics-system"
       name="gz::sim::systems::Hydrodynamics">
@@ -122,9 +149,9 @@
       <xUabsU>-0.001617</xUabsU><xU>0</xU>
       <yVabsV>-0.001617</yVabsV><yV>0</yV>
       <zWabsW>-2.7708847204661974e-05</zWabsW><zW>0</zW>
-      <kPabsP>-1.36434375e-06</kPabsP><kP>0</kP>
-      <mQabsQ>-1.36434375e-06</mQabsQ><mQ>0</mQ>
-      <nRabsR>-1.36434375e-06</nRabsR><nR>0</nR>
+      <kPabsP>-0.00027286875000000004</kPabsP><kP>0</kP>
+      <mQabsQ>-0.00027286875000000004</mQabsQ><mQ>0</mQ>
+      <nRabsR>-0.00027286875000000004</nRabsR><nR>0</nR>
     </plugin>
 
     <plugin
@@ -136,9 +163,9 @@
       <xUabsU>-0.009432500000000002</xUabsU><xU>0</xU>
       <yVabsV>-0.009432500000000002</yVabsV><yV>0</yV>
       <zWabsW>-0.002121458614106933</zWabsW><zW>0</zW>
-      <kPabsP>-2.358125000000001e-06</kPabsP><kP>0</kP>
-      <mQabsQ>-2.358125000000001e-06</mQabsQ><mQ>0</mQ>
-      <nRabsR>-2.358125000000001e-06</nRabsR><nR>0</nR>
+      <kPabsP>-0.00047162500000000015</kPabsP><kP>0</kP>
+      <mQabsQ>-0.00047162500000000015</mQabsQ><mQ>0</mQ>
+      <nRabsR>-0.00047162500000000015</nRabsR><nR>0</nR>
     </plugin>
   </model>
 </sdf>

@@ -46,6 +46,20 @@ AIR_DENSITY_KG_M3 = 1.225
 CD_CROSSFLOW = 1.1  # cylinder broadside to the flow (its long axis perpendicular to velocity)
 CD_AXIAL = 0.9       # flat-ended cylinder moving along its own long axis
 
+# Openly pragmatic, NOT first-principles like CD_CROSSFLOW/CD_AXIAL above -- the raw
+# strip-theory rotational coefficients come out ~1e-6 (they scale with length^4), and reusing
+# the tumbling-drag formula for nRabsR (spin about the cylinder's own long axis) is physically
+# the wrong mechanism for that axis anyway (skin friction, not crossflow form drag) since it
+# wasn't derived separately. Bump this if payload spin visibly persists; the spin marker visual
+# (see model.sdf.template) is there specifically to tell real self-spin from mere orbital
+# revolution around the pivot.
+ROTATIONAL_DRAG_MULTIPLIER = 200.0
+
+# Purely visual (no collision/inertial effect) -- a stripe on one side of the payload cylinder so
+# self-spin is visible in the GUI instead of ambiguous with orbital motion around the pivot.
+STRIPE_THICKNESS_M = 0.006
+STRIPE_WIDTH_M = 0.012
+
 
 def solid_cylinder_inertia(mass: float, radius: float, length: float) -> tuple[float, float]:
     """(ixx == iyy, izz) for a solid cylinder with its long axis along local z."""
@@ -72,7 +86,8 @@ def quadratic_drag_coeffs(radius: float, length: float) -> tuple[float, float, f
     z_wabsw = -0.5 * AIR_DENSITY_KG_M3 * CD_AXIAL * endcap_area
     # torque = 0.5*rho*Cd*diameter*omega*|omega| * 2*integral[0, L/2] of r^3 dr
     #        = 0.5*rho*Cd*diameter*omega*|omega| * (L^4 / 32)
-    rot_coeff = -0.5 * AIR_DENSITY_KG_M3 * CD_CROSSFLOW * diameter * (length ** 4) / 32.0
+    rot_coeff = -0.5 * AIR_DENSITY_KG_M3 * CD_CROSSFLOW * diameter * (length ** 4) / 32.0 \
+        * ROTATIONAL_DRAG_MULTIPLIER
     k_pabsp = m_qabsq = n_rabsr = rot_coeff
     return x_uabsu, y_vabsv, z_wabsw, k_pabsp, m_qabsq, n_rabsr
 
@@ -97,11 +112,15 @@ def main() -> None:
     rod_bottom_z = ATTACH_Z_M - ROD_LENGTH_M
     payload_center_z = rod_bottom_z - PAYLOAD_HEIGHT_M / 2.0
     total_hang_depth_below_base_link_m = -ATTACH_Z_M + ROD_LENGTH_M + PAYLOAD_HEIGHT_M
+    stripe_offset_m = PAYLOAD_RADIUS_M + STRIPE_THICKNESS_M / 2.0
 
     rendered = TEMPLATE_PATH.read_text().format(
         ATTACH_X_M=ATTACH_X_M,
         ATTACH_Y_M=ATTACH_Y_M,
         ATTACH_Z_M=ATTACH_Z_M,
+        STRIPE_OFFSET_M=stripe_offset_m,
+        STRIPE_THICKNESS_M=STRIPE_THICKNESS_M,
+        STRIPE_WIDTH_M=STRIPE_WIDTH_M,
         ROD_MIDPOINT_Z=rod_midpoint_z,
         ROD_BOTTOM_Z=rod_bottom_z,
         ROD_MASS_KG=ROD_MASS_KG,
