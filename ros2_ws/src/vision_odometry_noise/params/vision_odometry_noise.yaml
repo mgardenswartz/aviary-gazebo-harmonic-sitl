@@ -62,4 +62,4 @@
       # from this bootstrap pool of real historical sensor dt values (microseconds). Empty path
       # resolves to the CSV packaged with this node (data/dt_bootstrap_pool_us.csv).
       bootstrap_pool_csv: ""
-      bootstrap_pool_rng_seed: -1    # -1 = unseeded (nondeterministic); set >= 0 for reproducible runs
+      bootstrap_pool_rng_seed: 42    # -1 = unseeded (nondeterministic); set >= 0 for reproducible runs
