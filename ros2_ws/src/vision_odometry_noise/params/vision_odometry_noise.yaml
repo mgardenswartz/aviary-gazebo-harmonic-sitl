@@ -26,13 +26,11 @@
       ground_truth_topic: ""         # empty = derive as /model/<vehicle_name>/odometry
 
       # Noise, per sensor_noise_profile.json. Independent zero-mean Gaussian per channel.
-      # TEMPORARY 5x STRESS values (tracking-error-vs-noise comparison) -- normal values are
-      # 0.01 / 0.02 / 0.01. Matched 5x on the PX4 side too (EKF2_EVP_NOISE/EKF2_EVV_NOISE/
-      # EKF2_EVA_NOISE in 4100_gz_sentinel) so PX4 trusts these appropriately. Revert all three
-      # (here and in 4100_gz_sentinel) after this comparison.
-      position_noise_std_m: 0.05
-      velocity_noise_std_mps: 0.10
-      orientation_noise_std_rad: 0.05
+      # Matched on the PX4 side too (EKF2_EVP_NOISE/EKF2_EVV_NOISE/EKF2_EVA_NOISE in
+      # 4100_gz_sentinel) so PX4 trusts these appropriately.
+      position_noise_std_m: 0.01
+      velocity_noise_std_mps: 0.02
+      orientation_noise_std_rad: 0.01
 
       # Position/velocity noise is truncated at +/- clip_sigma standard deviations (per axis).
       # Still Gaussian in the bulk -- this only truncates the tails, it doesn't change scale.

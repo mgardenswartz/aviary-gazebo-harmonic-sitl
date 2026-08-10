@@ -138,10 +138,8 @@ param set-default THR_MDL_FAC 0.8
 # prepare to add noise to the sim
 # Units/semantics verified directly against src/modules/ekf2/ekf2_params.c in this branch.
 param set-default EKF2_EV_CTRL 15 # bitmask: horiz pos + vert pos + 3D vel + yaw (matches compiled default)
-# TEMPORARY 5x STRESS value (tracking-error-vs-noise comparison) -- normal value is 0.01, revert after.
-param set-default EKF2_EVP_NOISE 0.05
-# TEMPORARY 5x STRESS value (tracking-error-vs-noise comparison) -- normal value is 0.02, revert after.
-param set-default EKF2_EVV_NOISE 0.10
+param set-default EKF2_EVP_NOISE 0.01
+param set-default EKF2_EVV_NOISE 0.02
 # Deliberately NOT set to PX4's hard floor (0.01) in the NOISE_AND_DELAYS_ON=false ablation arm
 # despite that mode injecting zero noise. Confirmed via ulog analysis (2026-08-05): a transient
 # vel_test_ratio spike during the takeoff-ramp transition happens in BOTH ablation arms (real,
@@ -155,9 +153,7 @@ param set-default EKF2_EVV_NOISE 0.10
 # rad. Was "001" (=1, missing the decimal point). NOTE: PX4 documents @min 0.05 rad for this param --
 # 0.01 is below that floor. Kept at 0.01 to match sensor_noise_profile.json exactly; verify PX4 doesn't
 # silently clamp or reject it at runtime.
-# TEMPORARY 5x STRESS value (tracking-error-vs-noise comparison) -- normal value is 0.01 (below
-# the @min 0.05 floor noted above, intentionally), revert after.
-param set-default EKF2_EVA_NOISE 0.05
+param set-default EKF2_EVA_NOISE 0.01
 param set-default EKF2_MAG_TYPE 5 # none; disable magnetometer since we're simulating an indoor environment with mocap. Already correct (verified: @value 5 None).
 # Was "0", which does the opposite of the comment: 0 = trust the message's own reported covariance,
 # using EKF2_EVx_NOISE only as a lower bound. 1 = ignore message covariance, use EKF2_EVx_NOISE directly.
