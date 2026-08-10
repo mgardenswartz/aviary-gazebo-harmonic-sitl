@@ -246,3 +246,5 @@ voxl-px4/
 .DS_Store
 Micro-XRCE-DDS-Agent/
 gazebo_debugging_data/
+resnet/
+plot_data/

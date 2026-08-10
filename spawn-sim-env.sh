@@ -22,6 +22,31 @@ z_pos=0.0
 yaw_offset=1.5708
 SENTINEL_VISION_PATH="/home/root/voxl-px4/px4-firmware/Tools/simulation/gz/models/sentinel_vision/model.sdf"
 
+# Slung-load ablation (see spawn-locations.env for SLUNG_MASS_KG). Unlike NOISE_AND_DELAYS_ON,
+# this needs an actual file regenerated (model.sdf has the mass/inertia baked in as numbers, not
+# read at runtime) and redeployed into the container's live SITL tree before it can be spawned --
+# both done here automatically so editing SLUNG_MASS_KG in spawn-locations.env is still the only
+# thing you touch between runs, same as the noise tests.
+SLUNG_MASS_KG="${SLUNG_MASS_KG:-0}"
+if (( $(echo "$SLUNG_MASS_KG > 0" | bc -l) )); then
+    SENTINEL_VISION_PATH="/home/root/voxl-px4/px4-firmware/Tools/simulation/gz/models/sentinel_vision_slung/model.sdf"
+    echo "SLUNG_MASS_KG=$SLUNG_MASS_KG -- generating and deploying sentinel_vision_slung model.sdf..."
+    python3 generate-slung-load-model.py "$SLUNG_MASS_KG"
+    # Targeted equivalent of update-px4-files.sh's "Upload models" step only -- deliberately not
+    # invoking the full script here, since that also touches firmware source/ROMFS files that
+    # this ablation has nothing to do with and might stomp on other in-progress edits.
+    sudo docker exec $CONTAINER_NAME bash -c "cp -r /home/root/px4-updates/models /home/root/voxl-px4/px4-firmware/Tools/simulation/gz/"
+    IFS="," read -r -a quad1_check <<< "${QUAD_SPAWN_LOCATIONS[0]}"
+    quad1_z_ned="${quad1_check[2]}"
+    if (( $(echo "$quad1_z_ned >= -0.3" | bc -l) )); then
+        echo "WARNING: QUAD1_LOCATION z=$quad1_z_ned (NED) is too close to ground level for a" \
+             "slung load -- the rod+payload hang 0.5m below base_link but base_link only clears" \
+             "~0.02m of ground at spawn. This will very likely clip the floor at spawn. Set" \
+             "QUAD1_LOCATION's z to something like -0.8 (NED, negative = up) in" \
+             "spawn-locations.env before continuing."
+    fi
+fi
+
 # make sure the container is running before we attempt to connect
 if [ ! "$(sudo docker ps -a | grep "$CONTAINER_NAME")" ]; then
 	echo "Warning: container "$CONTAINER_NAME" is not running. Gazebo set up failed"

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <model name='sentinel_vision_slung'>
+    <include merge='true'>
+      <uri>sentinel</uri>
+    </include>
+
+    <!-- Slung load: a rigid rod connects base_link to an upright cylindrical payload via two
+         ball joints (free rotation at both ends — pivot-pivot, no torque transfer through the
+         rod), not a single-pivot pendulum straight off base_link like the earlier reference
+         model. Rod length/radius and payload radius/height are fixed constants (see
+         generate-slung-load-model.py) so mass sweeps only ever change PAYLOAD_MASS_KG and its
+         derived inertia — everything else about the geometry stays identical between runs.
+         The rod's mass is a small nonzero stand-in for "massless" (most physics engines reject
+         exactly zero mass/inertia); if the rod jitters/vibrates in the sweep, that's a known
+         risk of this two-very-different-mass-scale joint chain, not necessarily a modeling bug —
+         try bumping ROD_MASS_KG up before suspecting the payload dynamics themselves.
+         Neither link has a <collision> (visual only), matching the earlier reference model's
+         choice to isolate pendulum dynamics from the contact solver — revisit only if we
+         actually want to model the load hitting something.
+
+         GENERATED FILE — edit generate-slung-load-model.py and re-run it, don't hand-edit
+         this output (model.sdf) directly, your changes will be overwritten. -->
+
+    <link name="rod_link">
+      <pose relative_to="base_link">0 0 -0.15 0 0 0</pose>
+      <inertial>
+        <mass>0.001</mass>
+        <inertia>
+          <ixx>7.504e-06</ixx><iyy>7.504e-06</iyy><izz>8e-09</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="rod_visual">
+        <geometry>
+          <cylinder>
+            <radius>0.004</radius>
+            <length>0.3</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.55 0.55 0.55 1</ambient>
+          <diffuse>0.55 0.55 0.55 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="rod_top_pivot" type="ball">
+      <pose relative_to="base_link">0 0 0 0 0 0</pose>
+      <parent>base_link</parent>
+      <child>rod_link</child>
+    </joint>
+
+    <link name="slung_load_link">
+      <pose relative_to="base_link">0 0 -0.4 0 0 0</pose>
+      <inertial>
+        <mass>0.25</mass>
+        <inertia>
+          <ixx>0.0009098958333333334</ixx><iyy>0.0009098958333333334</iyy><izz>0.00015312500000000002</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="slung_load_visual">
+        <geometry>
+          <cylinder>
+            <radius>0.035</radius>
+            <length>0.2</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.1 0.3 0.8 1</ambient>
+          <diffuse>0.1 0.3 0.8 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="rod_bottom_pivot" type="ball">
+      <pose relative_to="base_link">0 0 -0.3 0 0 0</pose>
+      <parent>rod_link</parent>
+      <child>slung_load_link</child>
+    </joint>
+
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <dimensions>3</dimensions>
+      <odom_publish_frequency>250</odom_publish_frequency>
+      <!-- Left disabled: the vision_odometry_noise ROS 2 node owns all noise/jitter
+           injection (per sensor_noise_profile.json), not this plugin. -->
+      <!-- <gaussian_noise>0.1</gaussian_noise> -->
+    </plugin>
+  </model>
+</sdf>
