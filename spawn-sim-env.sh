@@ -79,12 +79,20 @@ else
         sleep $sleep_time
     done
 
+    # Start the ROS<->Gazebo ground-truth odometry bridge (gz_odom.yaml) now that the quad
+    # model(s) exist and are publishing /model/<name>/odometry. Needed by
+    # vision_odometry_noise_node below. NOTE: gz_odom.yaml only bridges px4_1 by default --
+    # uncomment the px4_2..px4_5 blocks there (and extend the loop below) for N_QUAD > 1.
+    if [ "$N_QUAD" -gt 0 ]; then
+        ./background-scripts/background-run-ros2gz-bridge.sh
+    fi
+
     # Now start px4_sitl instances for each quad loaded, give px4 a little longer to load
     sleep_time=10
     for i in $(seq 1 $N_QUAD); do
         echo "Starting px4_sitl instance for sentinel vision model px4_"$i
         # don't log px4 output, creates too large of files as blinking cursor is read as output for some reason
-        sudo docker exec -d $CONTAINER_NAME bash -c "source /home/root/ros-sources.sh; PX4_SYS_AUTOSTART=4101 PX4_GZ_MODEL_NAME=$vehicle_name$i PX4_GZ_STANDALONE=1 /home/root/voxl-px4/px4-firmware/build/px4_sitl_default/bin/px4 -i $i >/dev/null 2>&1"
+        sudo docker exec -d $CONTAINER_NAME bash -c "source /home/root/ros-sources.sh; PX4_SYS_AUTOSTART=4101 PX4_GZ_MODEL_NAME=$vehicle_name$i PX4_GZ_STANDALONE=1 NOISE_AND_DELAYS_ON=$NOISE_AND_DELAYS_ON /home/root/voxl-px4/px4-firmware/build/px4_sitl_default/bin/px4 -i $i >/dev/null 2>&1"
         # give gazebo time to start up/load models before we load another
         sleep $sleep_time
     done
@@ -96,9 +104,14 @@ else
     if [ "$N_QUAD" -gt 0 ]; then
         ./background-scripts/background-start-xrce-agent.sh
     fi
-    
 
-    # Optional - start ros-gz param bridge for quad odom topic
+    # Now start vision_odometry_noise_node so PX4's EKF2 has vision aiding to fuse -- without
+    # this running, the vision-only airframe config (4101_gz_sentinel) never clears its
+    # preflight EKF2 checks. NOTE: single-vehicle only for now (defaults to px4_1, matching
+    # QUAD_SPAWN_LOCATIONS[0]) -- extend to a loop alongside the bridge above for N_QUAD > 1.
+    if [ "$N_QUAD" -gt 0 ]; then
+        ./background-scripts/background-run-vision-odometry-noise.sh "$NOISE_AND_DELAYS_ON"
+    fi
 fi
 
 # /opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin

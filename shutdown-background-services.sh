@@ -9,7 +9,11 @@ if [ ! "$(sudo docker ps -a | grep "$CONTAINER_NAME")" ]; then
 else
 	echo "Found container "$CONTAINER_NAME"."
     echo "Preparing to shutdown background processes"
-    echo "Shutting down XRCE Agent..."
+    echo "Shutting down vision_odometry_noise_node..."
+	sudo docker exec -it $CONTAINER_NAME bash -c "./background-scripts/background-stop-vision-odometry-noise.sh"
+	echo "Shutting down ROS<->Gazebo topic bridge..."
+	sudo docker exec -it $CONTAINER_NAME bash -c "./background-scripts/background-stop-ros2gz-bridge.sh"
+	echo "Shutting down XRCE Agent..."
 	sudo docker exec -it $CONTAINER_NAME bash -c "./background-scripts/background-stop-xrce-agent.sh"
 	echo "Shutting down PX4 SITL instances..."
     sudo docker exec -it $CONTAINER_NAME bash -c "./background-scripts/background-shutdown-px4-sitl.sh"

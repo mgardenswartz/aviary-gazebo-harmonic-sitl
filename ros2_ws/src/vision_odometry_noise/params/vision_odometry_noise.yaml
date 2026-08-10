@@ -3,14 +3,36 @@
     ros__parameters:
       vehicle_name: "px4_1"          # matches the /model/<vehicle_name>/odometry ground-truth topic and /<vehicle_name>/fmu/in/... PX4 topics
 
+      # Ablation switch for comparison runs. true (default): realistic sensor emulation --
+      # clipped Gaussian noise on position/velocity/orientation, published on a bootstrap-
+      # jittered timer (mean ~9.3ms / ~107Hz, see bootstrap_pool_* below). false: publish
+      # Gazebo ground truth straight through with zero added noise, on a fixed-rate timer at
+      # clean_publish_rate_hz -- the bootstrap_pool_*/*_noise_* params below are all ignored
+      # in that mode (the CSV isn't even loaded).
+      #
+      # NOTE: false does NOT publish synchronously on every ground-truth sample anymore
+      # (that was ~250Hz, matching Gazebo's physics step) -- it confounded the ablation, since
+      # noise_and_delays_enabled would then be changing BOTH noise magnitude AND publish rate
+      # at once, and 250Hz vision fusion turned out to have its own (still not fully
+      # understood) effect independent of noise. clean_publish_rate_hz lets rate be held
+      # comparable between arms so noise is the only thing actually being isolated.
+      noise_and_delays_enabled: true
+
+      # Fixed publish rate used only when noise_and_delays_enabled=false (see note above).
+      clean_publish_rate_hz: 125.0
+
       # Ground-truth source: bridged from the sentinel_vision model's gz-sim-odometry-publisher-system
       # plugin via gz_odom.yaml (nav_msgs/Odometry on /model/<vehicle_name>/odometry).
       ground_truth_topic: ""         # empty = derive as /model/<vehicle_name>/odometry
 
       # Noise, per sensor_noise_profile.json. Independent zero-mean Gaussian per channel.
-      position_noise_std_m: 0.01
-      velocity_noise_std_mps: 0.02
-      orientation_noise_std_rad: 0.01
+      # TEMPORARY 5x STRESS values (tracking-error-vs-noise comparison) -- normal values are
+      # 0.01 / 0.02 / 0.01. Matched 5x on the PX4 side too (EKF2_EVP_NOISE/EKF2_EVV_NOISE/
+      # EKF2_EVA_NOISE in 4100_gz_sentinel) so PX4 trusts these appropriately. Revert all three
+      # (here and in 4100_gz_sentinel) after this comparison.
+      position_noise_std_m: 0.05
+      velocity_noise_std_mps: 0.10
+      orientation_noise_std_rad: 0.05
 
       # Position/velocity noise is truncated at +/- clip_sigma standard deviations (per axis).
       # Still Gaussian in the bulk -- this only truncates the tails, it doesn't change scale.
