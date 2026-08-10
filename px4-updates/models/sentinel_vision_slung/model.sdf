@@ -17,13 +17,32 @@
          try bumping ROD_MASS_KG up before suspecting the payload dynamics themselves.
          Neither link has a <collision> (visual only), matching the earlier reference model's
          choice to isolate pendulum dynamics from the contact solver — revisit only if we
-         actually want to model the load hitting something.
+         actually want to model the load hitting something. Since there's no collision, spawning
+         below ground level (e.g. QUAD1_LOCATION z=0) is visually odd but not a physics problem —
+         no contact solver reaction, since there's nothing here to generate contact with.
+
+         Attach point (ATTACH_X/Y/Z_M) is the center of one landing gear's horizontal foot pad
+         (base_link_collision_3 in sentinel_base/model.sdf, i.e. one arm of the inverted-T leg),
+         not base_link's own origin — the legs aren't separate links/joints in this model, just
+         collision boxes glued onto base_link, so this is purely a different offset on the same
+         rigid body, not a joint to a different body.
+
+         Damping is real aerodynamic quadratic drag via the gz-sim Hydrodynamics system plugin
+         (force = -0.5 * air_density * Cd * A * v*|v|, per axis — see the xUabsU-style
+         parameters below), NOT SDF's <velocity_decay>, which is confirmed unimplemented/silently
+         ignored by gz-physics's DART backend as of Harmonic (gz-physics#635) — setting it had
+         zero effect at any magnitude, hence its absence here. Coefficients are derived in
+         generate-slung-load-model.py from each link's own radius/length; rotational (roll/pitch/
+         yaw) damping is a rough strip-theory estimate, not rigorously derived like the
+         translational terms — retune if payload spin specifically looks wrong. Added-mass terms
+         (xDotU etc.) are left at 0: negligible for a small solid body in air (they matter for
+         displacement-scale bodies in water, which is what this plugin was built for).
 
          GENERATED FILE — edit generate-slung-load-model.py and re-run it, don't hand-edit
          this output (model.sdf) directly, your changes will be overwritten. -->
 
     <link name="rod_link">
-      <pose relative_to="base_link">0 0 -0.15 0 0 0</pose>
+      <pose relative_to="base_link">0.0 -0.132 -0.3695 0 0 0</pose>
       <inertial>
         <mass>0.001</mass>
         <inertia>
@@ -46,13 +65,13 @@
     </link>
 
     <joint name="rod_top_pivot" type="ball">
-      <pose relative_to="base_link">0 0 0 0 0 0</pose>
+      <pose relative_to="base_link">0.0 -0.132 -0.2195 0 0 0</pose>
       <parent>base_link</parent>
       <child>rod_link</child>
     </joint>
 
     <link name="slung_load_link">
-      <pose relative_to="base_link">0 0 -0.4 0 0 0</pose>
+      <pose relative_to="base_link">0.0 -0.132 -0.6194999999999999 0 0 0</pose>
       <inertial>
         <mass>0.25</mass>
         <inertia>
@@ -75,7 +94,7 @@
     </link>
 
     <joint name="rod_bottom_pivot" type="ball">
-      <pose relative_to="base_link">0 0 -0.3 0 0 0</pose>
+      <pose relative_to="base_link">0.0 -0.132 -0.5195 0 0 0</pose>
       <parent>rod_link</parent>
       <child>slung_load_link</child>
     </joint>
@@ -88,6 +107,38 @@
       <!-- Left disabled: the vision_odometry_noise ROS 2 node owns all noise/jitter
            injection (per sensor_noise_profile.json), not this plugin. -->
       <!-- <gaussian_noise>0.1</gaussian_noise> -->
+    </plugin>
+
+    <!-- Real aerodynamic quadratic drag (Fossen model, force = coeff * v*|v| per axis), derived
+         from each link's own crossflow/end-cap area in air — see generate-slung-load-model.py.
+         Verified parameter names against /usr/share/gz/gz-sim8/worlds/auv_controls.sdf on this
+         host (an installed gz-sim demo world), not guessed from memory. -->
+    <plugin
+      filename="gz-sim-hydrodynamics-system"
+      name="gz::sim::systems::Hydrodynamics">
+      <link_name>rod_link</link_name>
+      <xDotU>0</xDotU><yDotV>0</yDotV><zDotW>0</zDotW>
+      <kDotP>0</kDotP><mDotQ>0</mDotQ><nDotR>0</nDotR>
+      <xUabsU>-0.001617</xUabsU><xU>0</xU>
+      <yVabsV>-0.001617</yVabsV><yV>0</yV>
+      <zWabsW>-2.7708847204661974e-05</zWabsW><zW>0</zW>
+      <kPabsP>-1.36434375e-06</kPabsP><kP>0</kP>
+      <mQabsQ>-1.36434375e-06</mQabsQ><mQ>0</mQ>
+      <nRabsR>-1.36434375e-06</nRabsR><nR>0</nR>
+    </plugin>
+
+    <plugin
+      filename="gz-sim-hydrodynamics-system"
+      name="gz::sim::systems::Hydrodynamics">
+      <link_name>slung_load_link</link_name>
+      <xDotU>0</xDotU><yDotV>0</yDotV><zDotW>0</zDotW>
+      <kDotP>0</kDotP><mDotQ>0</mDotQ><nDotR>0</nDotR>
+      <xUabsU>-0.009432500000000002</xUabsU><xU>0</xU>
+      <yVabsV>-0.009432500000000002</yVabsV><yV>0</yV>
+      <zWabsW>-0.002121458614106933</zWabsW><zW>0</zW>
+      <kPabsP>-2.358125000000001e-06</kPabsP><kP>0</kP>
+      <mQabsQ>-2.358125000000001e-06</mQabsQ><mQ>0</mQ>
+      <nRabsR>-2.358125000000001e-06</nRabsR><nR>0</nR>
     </plugin>
   </model>
 </sdf>

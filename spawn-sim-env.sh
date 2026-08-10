@@ -39,11 +39,12 @@ if (( $(echo "$SLUNG_MASS_KG > 0" | bc -l) )); then
     IFS="," read -r -a quad1_check <<< "${QUAD_SPAWN_LOCATIONS[0]}"
     quad1_z_ned="${quad1_check[2]}"
     if (( $(echo "$quad1_z_ned >= -0.3" | bc -l) )); then
-        echo "WARNING: QUAD1_LOCATION z=$quad1_z_ned (NED) is too close to ground level for a" \
-             "slung load -- the rod+payload hang 0.5m below base_link but base_link only clears" \
-             "~0.02m of ground at spawn. This will very likely clip the floor at spawn. Set" \
-             "QUAD1_LOCATION's z to something like -0.8 (NED, negative = up) in" \
-             "spawn-locations.env before continuing."
+        echo "NOTE: QUAD1_LOCATION z=$quad1_z_ned (NED) means the payload will render below the" \
+             "ground plane at the bottom of its swing (rod+payload hang ~0.72m below base_link," \
+             "base_link only clears ~0.02m of ground at spawn) -- purely visual, not a physics" \
+             "problem, since neither the rod nor the payload has collision geometry. Only bump" \
+             "QUAD1_LOCATION's z (e.g. -0.8, NED so negative = up) if that clipping bothers you" \
+             "in the GUI."
     fi
 fi
 
