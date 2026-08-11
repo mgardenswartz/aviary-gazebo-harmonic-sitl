@@ -135,6 +135,11 @@ param set-default BAT1_V_EMPTY 3.5
 # updated thrust model
 param set-default THR_MDL_FAC 0.8
 
+# Offboard loss -> Hold (position-hold, kills drift) instead of coasting or
+# escalating to RTL. debugging_node's own NAV_LAND command handles the actual
+# landing once its run ends.
+param set-default COM_OBL_RC_ACT 5
+
 # prepare to add noise to the sim
 # Units/semantics verified directly against src/modules/ekf2/ekf2_params.c in this branch.
 param set-default EKF2_EV_CTRL 15 # bitmask: horiz pos + vert pos + 3D vel + yaw (matches compiled default)
@@ -185,4 +190,6 @@ param set-default EKF2_EV_DELAY 13.9
 # updateHorizontalPositionAidSrcStatus/updateVerticalPositionAidSrcStatus -- regardless of
 # what EKF2_EVx_NOISE or the message's own covariance says.
 NOISE_AND_DELAYS_ON=${NOISE_AND_DELAYS_ON:=true}
+
+
 

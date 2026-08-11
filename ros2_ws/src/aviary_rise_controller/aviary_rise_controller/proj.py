@@ -35,3 +35,39 @@ def discrete_projection(
         return theta_temp
 
     return jax.lax.cond(is_inside, bypass_projection, apply_projection, None) # type: ignore
+
+@jax.jit
+def discrete_rate_projection(
+    theta_hat: jax.Array,
+    theta_next: jax.Array,
+    dt: float,
+    theta_dot_bar: float
+) -> tuple[jax.Array, jax.Array]:
+    # Discrete analog of the continuous-time rate saturation theta_hat_dot =
+    # sat(proj(nominal_theta_hat_dot)): theta_next here is ALREADY the output of
+    # discrete_projection (the "proj" stage), so this only ever needs to shrink the
+    # step -- never redirect it. Written in terms of the per-step DISPLACEMENT
+    # (theta_next - theta_hat) rather than dividing by dt directly, since dt is a
+    # measured (not fixed) control-loop period: comparing the displacement against
+    # the max ALLOWED displacement (theta_dot_bar * dt) avoids ever forming
+    # rate = displacement / dt as an intermediate value, so a tiny or zero dt can't
+    # produce inf/NaN.
+    #
+    # Correctness of doing this AFTER (outside of) the ball projection, rather than
+    # capping the nominal rate before it: uniformly shrinking the displacement
+    # produces a point on the straight-line segment between theta_hat and
+    # theta_next. Both endpoints are already guaranteed inside the theta_bar ball
+    # (theta_hat inductively from the previous step, theta_next by construction of
+    # discrete_projection), and the ball is convex, so every point on that segment
+    # -- including this shrunk one -- is inside it too. The rate cap gets the
+    # ball-safety guarantee for free, with no re-projection needed.
+    displacement = theta_next - theta_hat
+    disp_norm = jnp.linalg.norm(displacement)
+    max_displacement = jnp.maximum(theta_dot_bar * dt, 0.0)
+
+    rate_limited = disp_norm > max_displacement
+
+    eps = 1e-12
+    scale = jnp.where(rate_limited, max_displacement / jnp.maximum(disp_norm, eps), 1.0)
+
+    return theta_hat + scale * displacement, rate_limited

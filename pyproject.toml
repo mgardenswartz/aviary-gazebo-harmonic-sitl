@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "setinel-gazebo-sitl"
+version = "1.0.0"
+description = "Sentintel SITL for RISE controller testing that connects to Gazebo"
+authors = [
+    { name = "Max Gardenswartz", email = "mgardenswartz@ufl.edu" },
+    { name = "Joe Lullo"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "jax",
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "optuna",
+    "pyyaml",
+    "jax-resnet@git+https://git@github.com/mgardenswartz/resnet.git@v1.2.1"
+]
+
+[project.optional-dependencies]
+cuda12 = ["jax[cuda12]"]
+cuda13 = ["jax[cuda13]"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

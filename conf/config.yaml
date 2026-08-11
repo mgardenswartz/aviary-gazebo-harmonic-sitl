@@ -1,0 +1,39 @@
+aviary_rise_node:
+  ros__parameters:
+    d_out: 3
+    
+    mpc_acc_hor_max_mps2: 6.0
+    mpc_acc_vert_max_mps2: 3.0
+    safe_x_max_m_ned: 5.0
+    safe_x_min_m_ned: -5.0
+    safe_y_max_m_ned: 11.5
+    safe_y_min_m_ned: -11.5
+    safe_z_max_m_ned: 0.5
+    safe_z_min_m_ned: -6.5
+    odom_timeout_s: 15.0
+    init_tol_m: 0.2
+    odom_watchdog_freq_hz: 10.0
+    init_z_m_ned: -1.5
+    theta_dot_bar: 1000.0
+    
+    initial_weight_scale_factor: 1.0
+
+    traj1_period_s: 30.0
+    traj1_alpha_warp: 0.5
+    traj1_x_amp_m_ned: 1.5
+    traj1_y_amp_m_ned: 3.0
+    traj1_center_z_m_ned: -0.75
+    traj1_z_amp_m_ned: 0.25
+    traj2_target_speed_mps: 1.0
+    traj2_petal_radius_m: 2.5
+    traj2_center_z_m_ned: -0.5
+
+    vehicle_name: 'px4_1'
+    control_frequency_hz: 50.0
+    save_data: True
+    run_length_s: 30.0
+    
+    q_e: 1.0
+    r_u: 0.0 #0.001
+    r_udot: 0.0 #0.0004
+    w_fail: 1000.0

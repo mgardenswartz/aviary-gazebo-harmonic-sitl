@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import os
-import sys
 import argparse
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "scripts"))
 from plotting import run_post_flight_analysis
 
 

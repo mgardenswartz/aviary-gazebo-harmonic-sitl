@@ -207,13 +207,15 @@ class DebuggingNode(Node):
 
     def vehicle_status_callback(self, msg: VehicleStatus) -> None:
         was_in_offboard_mode: bool = self.in_offboard_mode
+        was_armed: bool = self.is_armed
         prev_nav_state: int = self.nav_state
 
         self.nav_state = msg.nav_state
         if self.nav_state != prev_nav_state:
             # Which failsafe mode PX4 actually falls back into on OFFBOARD loss is
             # governed by PX4 params (COM_OBL_ACT / COM_OBL_RC_ACT), not by this
-            # node -- log it plainly so a run tells us which mode was picked.
+            # node -- log it plainly so a run tells us which mode was picked, and
+            # keep watching (don't exit here) in case it cascades to another mode.
             self.get_logger().info(
                 f"nav_state: {NAV_STATE_NAMES.get(prev_nav_state, prev_nav_state)} -> "
                 f"{NAV_STATE_NAMES.get(self.nav_state, self.nav_state)}"
@@ -232,8 +234,13 @@ class DebuggingNode(Node):
             else:
                 self.get_logger().info(f"PX4 exited OFFBOARD mode at t={now_s:.3f}s (heartbeat was still active).")
 
-            if self.experiment_state == ExperimentState.STATE_DONE:
-                raise ExperimentFinished("PX4 exited OFFBOARD after the deliberate heartbeat cutoff.")
+        # The flight isn't actually over just because OFFBOARD was left -- PX4's
+        # failsafe fallback (Hold/Land/RTL/...) still has to run its course. Wait
+        # for the real end-of-flight signal (auto-disarm after landing) so the log
+        # captures whatever that fallback actually does, instead of going dark
+        # right as it starts.
+        if was_armed and not self.is_armed and self.experiment_state == ExperimentState.STATE_DONE:
+            raise ExperimentFinished("PX4 disarmed after the deliberate heartbeat cutoff.")
 
     def odom_callback(self, msg: VehicleOdometry) -> None:
         self.latest_odom = msg

@@ -248,3 +248,8 @@ Micro-XRCE-DDS-Agent/
 gazebo_debugging_data/
 resnet/
 plot_data/
+venv_docker/
+venv_host/
+.gz/
+.bash_history
+.gitconfig/

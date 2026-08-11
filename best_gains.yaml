@@ -1,0 +1,41 @@
+BEST_INN:
+  controller_type: integrated_resnet
+  gamma: 10.0
+  hidden_width: 4
+  k_0: 2
+  k_1: 0.72
+  k_2: 0.11
+  k_3: 2.4
+  k_i: 2
+  k_rise: 0.5
+  num_blocks: 1
+  sigma_mod: 3.0
+BEST_NN:
+  controller_type: resnet
+  gamma: 10.0
+  hidden_width: 4
+  k_0: 2
+  k_1: 0.72
+  k_2: 0.11
+  k_3: 2.4
+  k_i: 2
+  k_rise: 0.5
+  num_blocks: 1
+  sigma_mod: 1.0
+BEST_PID:
+  K_D: 5.0
+  K_I: 1.0
+  K_P: 5.0
+  controller_type: pid
+BEST_RISE:
+  controller_type: baseline
+  k_1: 0.72
+  k_2: 0.11
+  k_3: 2.4
+  k_rise: 0.5
+#BEST_RISE_NO_WIND:
+#  controller_type: baseline_no_wind
+#  k_1: 0.036353030663799586
+#  k_2: 1.9716254754780413
+#  k_3: 5.298432129772606
+#  k_rise: 0.049634347637912545
