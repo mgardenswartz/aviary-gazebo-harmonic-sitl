@@ -14,6 +14,26 @@ from px4_msgs.msg import VehicleCommand
 from px4_msgs.msg import VehicleStatus
 from px4_msgs.msg import VehicleOdometry
 
+NAV_STATE_NAMES = {
+    VehicleStatus.NAVIGATION_STATE_MANUAL: "MANUAL",
+    VehicleStatus.NAVIGATION_STATE_ALTCTL: "ALTCTL",
+    VehicleStatus.NAVIGATION_STATE_POSCTL: "POSCTL",
+    VehicleStatus.NAVIGATION_STATE_AUTO_MISSION: "AUTO_MISSION",
+    VehicleStatus.NAVIGATION_STATE_AUTO_LOITER: "AUTO_LOITER",
+    VehicleStatus.NAVIGATION_STATE_AUTO_RTL: "AUTO_RTL",
+    VehicleStatus.NAVIGATION_STATE_ACRO: "ACRO",
+    VehicleStatus.NAVIGATION_STATE_DESCEND: "DESCEND",
+    VehicleStatus.NAVIGATION_STATE_TERMINATION: "TERMINATION",
+    VehicleStatus.NAVIGATION_STATE_OFFBOARD: "OFFBOARD",
+    VehicleStatus.NAVIGATION_STATE_STAB: "STAB",
+    VehicleStatus.NAVIGATION_STATE_AUTO_TAKEOFF: "AUTO_TAKEOFF",
+    VehicleStatus.NAVIGATION_STATE_AUTO_LAND: "AUTO_LAND",
+    VehicleStatus.NAVIGATION_STATE_AUTO_FOLLOW_TARGET: "AUTO_FOLLOW_TARGET",
+    VehicleStatus.NAVIGATION_STATE_AUTO_PRECLAND: "AUTO_PRECLAND",
+    VehicleStatus.NAVIGATION_STATE_ORBIT: "ORBIT",
+    VehicleStatus.NAVIGATION_STATE_AUTO_VTOL_TAKEOFF: "AUTO_VTOL_TAKEOFF",
+}
+
 class ExperimentState:
     STATE_INIT: int = 0
     STATE_TAKEOFF: int = 1
@@ -94,6 +114,7 @@ class DebuggingNode(Node):
         self.freeze_int_z: bool = False
         self.initial_position_locked: bool = False
         self.publish_offboard_heartbeat: bool = False
+        self.position_mode_requested: bool = False
         self.step_command_sent: bool = False
         self.latest_odom: Optional[VehicleOdometry] = None
 
@@ -103,7 +124,7 @@ class DebuggingNode(Node):
         self.experiment_state: int = ExperimentState.STATE_INIT
 
         # Per-state timestamps, set as the state machine transitions
-        self.last_mode_cmd_time_s: float = 0.0
+        # (last_mode_cmd_time_s is initialized below, once heartbeat_raised_time_s is known)
         self.takeoff_entry_time_s: float = 0.0
         self.step_input_entry_time_s: float = 0.0
         self.finish_up_entry_time_s: float = 0.0
@@ -169,6 +190,12 @@ class DebuggingNode(Node):
 
         self.publish_offboard_heartbeat = False
         self.heartbeat_raised_time_s = self.get_clock().now().nanoseconds / 1e9
+        # Defer the first mode-switch/arm attempt by one mode_publisher_period_s so
+        # PX4 has already seen a handful of streamed setpoints -- an immediate
+        # attempt (last_mode_cmd_time_s starting at 0.0) races the very first
+        # setpoint and PX4 will reject the switch (see the "send a few setpoints
+        # before starting" note in the MAVROS offboard tutorial).
+        self.last_mode_cmd_time_s = self.heartbeat_raised_time_s
 
         self.get_logger().info(f"Node Initialized Successfully. Offboard heartbeat raised; waiting for OFFBOARD mode confirmation.")
 
@@ -180,8 +207,17 @@ class DebuggingNode(Node):
 
     def vehicle_status_callback(self, msg: VehicleStatus) -> None:
         was_in_offboard_mode: bool = self.in_offboard_mode
+        prev_nav_state: int = self.nav_state
 
         self.nav_state = msg.nav_state
+        if self.nav_state != prev_nav_state:
+            # Which failsafe mode PX4 actually falls back into on OFFBOARD loss is
+            # governed by PX4 params (COM_OBL_ACT / COM_OBL_RC_ACT), not by this
+            # node -- log it plainly so a run tells us which mode was picked.
+            self.get_logger().info(
+                f"nav_state: {NAV_STATE_NAMES.get(prev_nav_state, prev_nav_state)} -> "
+                f"{NAV_STATE_NAMES.get(self.nav_state, self.nav_state)}"
+            )
         self.is_armed = (msg.arming_state == VehicleStatus.ARMING_STATE_ARMED)
         self.in_offboard_mode = (msg.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD)
         self.vehicle_system_id = msg.system_id
@@ -195,6 +231,9 @@ class DebuggingNode(Node):
                 )
             else:
                 self.get_logger().info(f"PX4 exited OFFBOARD mode at t={now_s:.3f}s (heartbeat was still active).")
+
+            if self.experiment_state == ExperimentState.STATE_DONE:
+                raise ExperimentFinished("PX4 exited OFFBOARD after the deliberate heartbeat cutoff.")
 
     def odom_callback(self, msg: VehicleOdometry) -> None:
         self.latest_odom = msg
@@ -211,7 +250,7 @@ class DebuggingNode(Node):
         elapsed_s = self.get_clock().now().nanoseconds / 1e9 - self.last_odom_ros_time_s
 
         if elapsed_s >= self.odom_timeout_s:
-            self.publish_trajectory_setpoint_stop()
+            self.publish_offboard_heartbeat = False
             raise OdomTimeoutError(f"No odometry received for {elapsed_s:.1f}s.")
 
 
@@ -259,30 +298,6 @@ class DebuggingNode(Node):
         msg.yaw = 0.0  # Command a heading of 0.0 always
 
         self.trajectory_setpoint_pub.publish(msg)
-
-    def publish_trajectory_setpoint_stop(self) -> None:
-        # Only ever call this right before handing control away on an unintended
-        # fault (never on the deliberate STATE_STEP_INPUT/STATE_FINISH_UP path).
-        # mc_pos_control keeps consuming the last trajectory_setpoint it saw for at
-        # least one cycle after OFFBOARD is left (position control stays enabled
-        # across an OFFBOARD->Land/Hold transition, so PX4's own
-        # stale-setpoint-clearing logic doesn't trigger on it) -- leaving an
-        # acceleration setpoint as that last message risks it getting applied under
-        # a controller no longer expecting open-loop acceleration input. A
-        # zero-velocity setpoint is safe to leave stale; it mirrors what PX4's own
-        # generateFailsafeSetpoint() falls back to.
-        if self.latest_odom is None:
-            return
-
-        msg: TrajectorySetpoint = TrajectorySetpoint()
-        msg.timestamp = self.latest_odom.timestamp
-        msg.acceleration = [float('nan'), float('nan'), float('nan')]
-        msg.position = [float('nan'), float('nan'), float('nan')]
-        msg.velocity = [0.0, 0.0, 0.0]
-        msg.yaw = 0.0
-
-        self.trajectory_setpoint_pub.publish(msg)
-        # TODO: Does this only work if the heartbeat is set to velocity, not acceleration?
 
     def write_csv(self) -> None:
         # You can either dump the CSV all at once at the end or periodically (at a specified rate to not slow down the control). TODO: Update to periodically.
@@ -390,7 +405,7 @@ class DebuggingNode(Node):
         q: np.ndarray = np.array(object=self.latest_odom.position, dtype=np.float64)
         boundary_err: Optional[str] = self.check_safety_boundary(position=q)
         if boundary_err is not None:
-            self.publish_trajectory_setpoint_stop()
+            self.publish_offboard_heartbeat = False
             raise BoundaryBreachError(boundary_err)
 
         match self.experiment_state:
@@ -398,6 +413,14 @@ class DebuggingNode(Node):
                 # Must publish setpoints with a TrajectorySetpoint otherwise transition to Offboard will be declined
                 self.publish_offboard_heartbeat = True
                 self.publish_trajectory_setpoint_acceleration(ax=0.0, ay=0.0, az=0.0)
+
+                if not self.position_mode_requested:
+                    # Recommended PX4 practice: enter OFFBOARD from Position mode, so that if
+                    # the vehicle ever drops out of OFFBOARD it falls back to a stable hover
+                    # instead of whatever mode it happened to boot into.
+                    # param1=1.0 -> MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, param2=3.0 -> PX4 custom main mode POSCTL
+                    self.publish_vehicle_command(command=VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=3.0)
+                    self.position_mode_requested = True
 
                 if now_s - self.heartbeat_raised_time_s > self.run_length_s:
                     raise FailsafeTriggeredError(
@@ -434,11 +457,11 @@ class DebuggingNode(Node):
 
             case ExperimentState.STATE_TAKEOFF:
                 if not self.in_offboard_mode:
-                    self.publish_trajectory_setpoint_stop()
+                    self.publish_offboard_heartbeat = False
                     raise FailsafeTriggeredError("PX4 left OFFBOARD mode during takeoff.")
 
                 if now_s - self.heartbeat_raised_time_s > self.run_length_s:
-                    self.publish_trajectory_setpoint_stop()
+                    self.publish_offboard_heartbeat = False
                     raise FailsafeTriggeredError(
                         f"Takeoff did not settle within run_length_s={self.run_length_s:.1f}s of the heartbeat being raised."
                     )
@@ -460,7 +483,7 @@ class DebuggingNode(Node):
 
             case ExperimentState.STATE_STEP_INPUT:
                 if not self.in_offboard_mode:
-                    self.publish_trajectory_setpoint_stop()
+                    self.publish_offboard_heartbeat = False
                     raise FailsafeTriggeredError("PX4 left OFFBOARD mode before the step input was sent.")
 
                 # Step 5: wait step_input_delay_s, then send exactly one acceleration
@@ -482,7 +505,7 @@ class DebuggingNode(Node):
                     self.heartbeat_stopped_time_s = now_s
                     self.get_logger().info(
                         f"Heartbeat stopped {now_s - self.finish_up_entry_time_s:.3f}s after the step input. "
-                        f"Waiting for PX4 to exit OFFBOARD (Ctrl+C to exit)."
+                        f"Waiting for PX4 to exit OFFBOARD."
                     )
                     self.experiment_state = ExperimentState.STATE_DONE
 

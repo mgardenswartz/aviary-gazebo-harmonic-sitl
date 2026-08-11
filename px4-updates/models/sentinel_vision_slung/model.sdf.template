@@ -5,52 +5,61 @@
       <uri>sentinel</uri>
     </include>
 
-    <!-- Slung load: a rigid rod connects base_link to an upright cylindrical payload via two
-         ball joints (free rotation at both ends — pivot-pivot, no torque transfer through the
-         rod), not a single-pivot pendulum straight off base_link like the earlier reference
-         model. Rod length/radius and payload radius/height are fixed constants (see
-         generate-slung-load-model.py) so mass sweeps only ever change PAYLOAD_MASS_KG and its
-         derived inertia — everything else about the geometry stays identical between runs.
-         The rod's mass is a small nonzero stand-in for "massless" (most physics engines reject
-         exactly zero mass/inertia); if the rod jitters/vibrates in the sweep, that's a known
-         risk of this two-very-different-mass-scale joint chain, not necessarily a modeling bug —
-         try bumping ROD_MASS_KG up before suspecting the payload dynamics themselves.
-         Neither link has a <collision> (visual only), matching the earlier reference model's
-         choice to isolate pendulum dynamics from the contact solver — revisit only if we
-         actually want to model the load hitting something. Since there's no collision, spawning
-         below ground level (e.g. QUAD1_LOCATION z=0) is visually odd but not a physics problem —
-         no contact solver reaction, since there's nothing here to generate contact with.
+    <!-- Slung load: ONE rigid body (rod + payload welded together) on a SINGLE ball joint from
+         base_link—a simple pendulum, not a double pendulum. Earlier this had the rod and
+         payload as two separate links on two ball joints in series (independent rotation at
+         each end), which let the rod and payload swing independently of each other—a real
+         second degree of freedom a taut string physically can't have (a string is inextensible
+         and has no bending stiffness, so it just goes taut and the whole thing swings as one
+         mass). That extra DOF was almost certainly why the payload was swinging out to ~90
+         degrees—genuine double-pendulum energy exchange, not just insufficient damping.
+
+         Combined mass/CG/inertia (COMBINED_MASS_KG, COMBINED_CG_Z, COMBINED_IXX/IZZ) are
+         computed in generate-slung-load-model.py via the parallel-axis theorem from the rod's
+         and payload's own geometry—ROD_LOCAL_Z/PAYLOAD_LOCAL_Z below are each visual's offset
+         from the combined CG (the link's own origin), not from base_link.
+
+         No <collision> on this link (visual only), matching the earlier reference model's choice
+         to isolate pendulum dynamics from the contact solver—revisit only if we actually want
+         to model the load hitting something. Since there's no collision, spawning below ground
+         level (e.g. QUAD1_LOCATION z=0) is visually odd but not a physics problem—no contact
+         solver reaction, since there's nothing here to generate contact with.
 
          Attach point (ATTACH_X/Y/Z_M) is the center of one landing gear's horizontal foot pad
          (base_link_collision_3 in sentinel_base/model.sdf, i.e. one arm of the inverted-T leg),
-         not base_link's own origin — the legs aren't separate links/joints in this model, just
+         not base_link's own origin—the legs aren't separate links/joints in this model, just
          collision boxes glued onto base_link, so this is purely a different offset on the same
          rigid body, not a joint to a different body.
 
          Damping is real aerodynamic quadratic drag via the gz-sim Hydrodynamics system plugin
-         (force = -0.5 * air_density * Cd * A * v*|v|, per axis — see the xUabsU-style
+         (force = -0.5 * air_density * Cd * A * v*|v|, per axis—see the xUabsU-style
          parameters below), NOT SDF's <velocity_decay>, which is confirmed unimplemented/silently
-         ignored by gz-physics's DART backend as of Harmonic (gz-physics#635) — setting it had
-         zero effect at any magnitude, hence its absence here. Coefficients are derived in
-         generate-slung-load-model.py from each link's own radius/length; rotational (roll/pitch/
-         yaw) damping is a rough strip-theory estimate, not rigorously derived like the
-         translational terms — retune if payload spin specifically looks wrong. Added-mass terms
-         (xDotU etc.) are left at 0: negligible for a small solid body in air (they matter for
-         displacement-scale bodies in water, which is what this plugin was built for).
+         ignored by gz-physics's DART backend as of Harmonic (gz-physics#635)—setting it had
+         zero effect at any magnitude, hence its absence here. AIR_DENSITY_KG_M3 is deliberately
+         inflated well past real air in generate-slung-load-model.py—see the comment there for
+         why (short version: the real hardware's fast decay is almost certainly dominated by
+         liquid sloshing inside the bottle, a mechanism this rigid-body model can't represent
+         directly, so air density is repurposed as a single empirical damping knob instead).
+         Rotational (roll/pitch/yaw) damping is a rough strip-theory estimate, not rigorously
+         derived like the translational terms—retune if payload spin specifically looks wrong.
+         Added-mass terms (xDotU etc.) are left at 0: negligible for a small solid body in air
+         (they matter for displacement-scale bodies in water, which is what this plugin was built
+         for).
 
-         GENERATED FILE — edit generate-slung-load-model.py and re-run it, don't hand-edit
-         this output (model.sdf) directly, your changes will be overwritten. -->
+         GENERATED FILE—edit generate-slung-load-model.py and re-run it, don't hand-edit this
+         output (model.sdf) directly, your changes will be overwritten. -->
 
-    <link name="rod_link">
-      <pose relative_to="base_link">{ATTACH_X_M} {ATTACH_Y_M} {ROD_MIDPOINT_Z} 0 0 0</pose>
+    <link name="slung_load_link">
+      <pose relative_to="base_link">{ATTACH_X_M} {ATTACH_Y_M} {COMBINED_CG_Z} 0 0 0</pose>
       <inertial>
-        <mass>{ROD_MASS_KG}</mass>
+        <mass>{COMBINED_MASS_KG}</mass>
         <inertia>
-          <ixx>{ROD_IXX}</ixx><iyy>{ROD_IXX}</iyy><izz>{ROD_IZZ}</izz>
+          <ixx>{COMBINED_IXX}</ixx><iyy>{COMBINED_IXX}</iyy><izz>{COMBINED_IZZ}</izz>
           <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
         </inertia>
       </inertial>
       <visual name="rod_visual">
+        <pose>0 0 {ROD_LOCAL_Z} 0 0 0</pose>
         <geometry>
           <cylinder>
             <radius>{ROD_RADIUS_M}</radius>
@@ -62,24 +71,8 @@
           <diffuse>0.55 0.55 0.55 1</diffuse>
         </material>
       </visual>
-    </link>
-
-    <joint name="rod_top_pivot" type="ball">
-      <pose relative_to="base_link">{ATTACH_X_M} {ATTACH_Y_M} {ATTACH_Z_M} 0 0 0</pose>
-      <parent>base_link</parent>
-      <child>rod_link</child>
-    </joint>
-
-    <link name="slung_load_link">
-      <pose relative_to="base_link">{ATTACH_X_M} {ATTACH_Y_M} {PAYLOAD_CENTER_Z} 0 0 0</pose>
-      <inertial>
-        <mass>{PAYLOAD_MASS_KG}</mass>
-        <inertia>
-          <ixx>{PAYLOAD_IXX}</ixx><iyy>{PAYLOAD_IXX}</iyy><izz>{PAYLOAD_IZZ}</izz>
-          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
-        </inertia>
-      </inertial>
       <visual name="slung_load_visual">
+        <pose>0 0 {PAYLOAD_LOCAL_Z} 0 0 0</pose>
         <geometry>
           <cylinder>
             <radius>{PAYLOAD_RADIUS_M}</radius>
@@ -91,14 +84,14 @@
           <diffuse>0.1 0.3 0.8 1</diffuse>
         </material>
       </visual>
-      <!-- Spin marker: a bright stripe running the full height of the cylinder, offset to one
-           side. Purely visual, no collision/inertial effect. If it stays pointing the same
-           absolute direction while the payload moves around its orbit, that's pure revolution
-           (no self-spin). If it visibly rotates in place, that's real spin about the payload's
-           own long axis (the nRabsR term below, the one whose drag coefficient is the least
-           trustworthy of the three — see the comment above the Hydrodynamics plugins). -->
+      <!-- Spin marker: a bright stripe running the full height of the payload cylinder, offset
+           to one side. Purely visual, no collision/inertial effect. If it stays pointing the
+           same absolute direction while the payload moves around its orbit, that's pure
+           revolution (no self-spin). If it visibly rotates in place, that's real spin about the
+           payload's own long axis (the nRabsR term below, the one whose drag coefficient is the
+           least trustworthy of the three—see the comment above the Hydrodynamics plugin). -->
       <visual name="slung_load_spin_marker">
-        <pose>{STRIPE_OFFSET_M} 0 0 0 0 0</pose>
+        <pose>{STRIPE_OFFSET_M} 0 {PAYLOAD_LOCAL_Z} 0 0 0</pose>
         <geometry>
           <box>
             <size>{STRIPE_THICKNESS_M} {STRIPE_WIDTH_M} {PAYLOAD_HEIGHT_M}</size>
@@ -111,9 +104,9 @@
       </visual>
     </link>
 
-    <joint name="rod_bottom_pivot" type="ball">
-      <pose relative_to="base_link">{ATTACH_X_M} {ATTACH_Y_M} {ROD_BOTTOM_Z} 0 0 0</pose>
-      <parent>rod_link</parent>
+    <joint name="slung_load_pivot" type="ball">
+      <pose relative_to="base_link">{ATTACH_X_M} {ATTACH_Y_M} {ATTACH_Z_M} 0 0 0</pose>
+      <parent>base_link</parent>
       <child>slung_load_link</child>
     </joint>
 
@@ -128,44 +121,30 @@
     </plugin>
 
     <!-- Real aerodynamic quadratic drag (Fossen model, force = coeff * v*|v| per axis), derived
-         from each link's own crossflow/end-cap area in air — see generate-slung-load-model.py.
-         Verified parameter names against /usr/share/gz/gz-sim8/worlds/auv_controls.sdf on this
-         host (an installed gz-sim demo world), not guessed from memory.
+         from the rod's and payload's combined crossflow/end-cap area in air—see
+         generate-slung-load-model.py. Verified parameter names against
+         /usr/share/gz/gz-sim8/worlds/auv_controls.sdf on this host (an installed gz-sim demo
+         world), not guessed from memory.
 
-         xUabsU/yVabsV/zWabsW (translational) are solidly derived from real drag-equation
-         geometry. kPabsP/mQabsQ/nRabsR (rotational) are weaker: kP/mQ (tumbling end-over-end)
-         use a real strip-theory crossflow derivation, but nR (spin about the cylinder's own
-         long axis, i.e. literally spinning like a top) is physically a different, much weaker
-         skin-friction mechanism that was NOT separately derived — all three currently share the
-         same tumbling-based formula, scaled by ROTATIONAL_DRAG_MULTIPLIER as an openly pragmatic
-         (not first-principles) knob, since the raw derived values are tiny (~1e-6) and self-spin
-         specifically was observed to persist for minutes without visibly decaying. -->
-    <plugin
-      filename="gz-sim-hydrodynamics-system"
-      name="gz::sim::systems::Hydrodynamics">
-      <link_name>rod_link</link_name>
-      <xDotU>0</xDotU><yDotV>0</yDotV><zDotW>0</zDotW>
-      <kDotP>0</kDotP><mDotQ>0</mDotQ><nDotR>0</nDotR>
-      <xUabsU>{ROD_X_UABSU}</xUabsU><xU>0</xU>
-      <yVabsV>{ROD_Y_VABSV}</yVabsV><yV>0</yV>
-      <zWabsW>{ROD_Z_WABSW}</zWabsW><zW>0</zW>
-      <kPabsP>{ROD_K_PABSP}</kPabsP><kP>0</kP>
-      <mQabsQ>{ROD_M_QABSQ}</mQabsQ><mQ>0</mQ>
-      <nRabsR>{ROD_N_RABSR}</nRabsR><nR>0</nR>
-    </plugin>
-
+         X_UABSU/Y_VABSV/Z_WABSW (translational) are the sum of the rod's and payload's
+         individually-derived drag—valid since both surfaces move at the same velocity now
+         (one rigid body), so their drag force contributions add directly. K_PABSP/M_QABSQ/
+         N_RABSR (rotational) are summed the same way as a pragmatic approximation; strictly the
+         combined body's rotational drag about this joint isn't just the sum of each part's drag
+         about its own center, but ROTATIONAL_DRAG_MULTIPLIER was already an order-of-magnitude
+         fudge factor before this, not a rigorously derived term. -->
     <plugin
       filename="gz-sim-hydrodynamics-system"
       name="gz::sim::systems::Hydrodynamics">
       <link_name>slung_load_link</link_name>
       <xDotU>0</xDotU><yDotV>0</yDotV><zDotW>0</zDotW>
       <kDotP>0</kDotP><mDotQ>0</mDotQ><nDotR>0</nDotR>
-      <xUabsU>{PAYLOAD_X_UABSU}</xUabsU><xU>0</xU>
-      <yVabsV>{PAYLOAD_Y_VABSV}</yVabsV><yV>0</yV>
-      <zWabsW>{PAYLOAD_Z_WABSW}</zWabsW><zW>0</zW>
-      <kPabsP>{PAYLOAD_K_PABSP}</kPabsP><kP>0</kP>
-      <mQabsQ>{PAYLOAD_M_QABSQ}</mQabsQ><mQ>0</mQ>
-      <nRabsR>{PAYLOAD_N_RABSR}</nRabsR><nR>0</nR>
+      <xUabsU>{X_UABSU}</xUabsU><xU>0</xU>
+      <yVabsV>{Y_VABSV}</yVabsV><yV>0</yV>
+      <zWabsW>{Z_WABSW}</zWabsW><zW>0</zW>
+      <kPabsP>{K_PABSP}</kPabsP><kP>0</kP>
+      <mQabsQ>{M_QABSQ}</mQabsQ><mQ>0</mQ>
+      <nRabsR>{N_RABSR}</nRabsR><nR>0</nR>
     </plugin>
   </model>
 </sdf>
