@@ -60,6 +60,7 @@ CONTROLLER_CONDITIONAL_PARAM_NAMES: set = {
     'k_1', 'k_2', 'k_3', 'k_rise',
     'd_in', 'initial_weights', 'gamma', 'sigma_mod', 'theta_bar', 'theta_dot_bar',
     'hidden_width', 'num_blocks', 'k_0', 'k_i', 'h_act_func', 'o_act_func', 'shortcut_act_func',
+    'use_sim_time' # TEMP
 }
 
 # Param names that are declared in the YAML purely as input to
@@ -98,18 +99,12 @@ class AviaryRiseNode(Node):
         # Fix: Convert parameters to primitive values for config
         self.config: Dict[str, Any] = {k: v.value for k, v in self.get_parameters_by_prefix(prefix='').items()}
         self.traj_gen: TrajectoryGenerator = TrajectoryGenerator(config=self.config)
-        # TrajectoryGenerator reads its traj{1,2}_* keys straight out of self.config by
-        # dict key rather than through _get_param, so mark them used here to keep
-        # _validate_declared_parameters() accurate for whichever trajectory is active.
-        if self.desired_trajectory == 1:
-            self._used_param_names.update([
-                'traj1_center_z_m_ned', 'traj1_period_s', 'traj1_x_amp_m_ned',
-                'traj1_y_amp_m_ned', 'traj1_z_amp_m_ned', 'traj1_alpha_warp',
-            ])
-        elif self.desired_trajectory == 2:
-            self._used_param_names.update([
-                'traj2_center_z_m_ned', 'traj2_petal_radius_m', 'traj2_target_speed_mps',
-            ])
+
+        self._used_param_names.update([
+            'traj1_center_z_m_ned', 'traj1_period_s', 'traj1_x_amp_m_ned',
+            'traj1_y_amp_m_ned', 'traj1_z_amp_m_ned', 'traj1_alpha_warp',
+            'traj2_center_z_m_ned', 'traj2_petal_radius_m', 'traj2_target_speed_mps'
+        ])
 
         # Safety
         self.acc_hor_max_mps2: float = self._get_param(name='mpc_acc_hor_max_mps2')
