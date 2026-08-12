@@ -33,7 +33,7 @@ class ExperimentState:
     STATE_FOLLOW_TRAJ: int = 2
     STATE_PAUSED: int = 3
 
-class CriticalHardwareError(Exception):
+class JaxLatencyError(Exception):
     pass
 
 class OdomTimeoutError(Exception):
@@ -48,6 +48,27 @@ class BoundaryBreachError(Exception):
 class ExperimentFinished(Exception):
     pass
 
+# Param names that are only ever fetched for SOME controller_type values (e.g. K_P/K_I/K_D
+# are read when controller_type == 'pid' but not otherwise). A single params.yaml commonly
+# holds gains for every controller type at once so it's quick to switch controller_type
+# without re-adding gains -- so these names are legitimate to leave declared-but-unused for
+# any one run and must not trip the unrecognized-parameter check in
+# _validate_declared_parameters(). Anything NOT in this set (plus what a given run actually
+# fetches) is either a genuine typo/stale key or an always-required name -- both real bugs.
+CONTROLLER_CONDITIONAL_PARAM_NAMES: set = {
+    'K_P', 'K_I', 'K_D',
+    'k_1', 'k_2', 'k_3', 'k_rise',
+    'd_in', 'initial_weights', 'gamma', 'sigma_mod', 'theta_bar', 'theta_dot_bar',
+    'hidden_width', 'num_blocks', 'k_0', 'k_i', 'h_act_func', 'o_act_func', 'shortcut_act_func',
+}
+
+# Param names that are declared in the YAML purely as input to
+# scripts/generate_hardware_params.py (consumed there to bake initial_weights before the
+# YAML is ever written) and are never read by the node itself at runtime.
+GENERATOR_ONLY_PARAM_NAMES: set = {
+    'initial_weight_scale_factor',
+}
+
 class AviaryRiseNode(Node):
     def __init__(self) -> None:
         super().__init__(
@@ -56,18 +77,20 @@ class AviaryRiseNode(Node):
             automatically_declare_parameters_from_overrides=True
         )
 
+        self._used_param_names: set = set()
+
         # Basic Parameters of the Experiment
-        self.is_gazebo: bool = self.get_parameter(name='is_gazebo').value
-        self.desired_trajectory: int = self.get_parameter(name='desired_trajectory').value
-        self.vehicle_name: str = self.get_parameter(name='vehicle_name').value
-        self.controller_type: str = self.get_parameter(name='controller_type').value
-        control_frequency_hz: float = self.get_parameter(name='control_frequency_hz').value
+        self.is_gazebo: bool = self._get_param(name='is_gazebo')
+        self.desired_trajectory: int = self._get_param(name='desired_trajectory')
+        self.vehicle_name: str = self._get_param(name='vehicle_name')
+        self.controller_type: str = self._get_param(name='controller_type')
+        control_frequency_hz: float = self._get_param(name='control_frequency_hz')
         self.control_period_s: float = 1.0 / control_frequency_hz
-        self.save_data: bool = self.get_parameter(name='save_data').value
-        self.trial_number: Optional[int] = self.get_parameter(name='trial_number').value if self.has_parameter('trial_number') else None
-        self.run_length_s: float = self.get_parameter(name='run_length_s').value
-        self.init_tol_m: float = self.get_parameter(name='init_tol_m').value
-        self.d_out: int = self.get_parameter(name='d_out').value
+        self.save_data: bool = self._get_param(name='save_data')
+        self.trial_number: Optional[int] = self._get_param(name='trial_number') if self.has_parameter('trial_number') else None
+        self.run_length_s: float = self._get_param(name='run_length_s')
+        self.init_tol_m: float = self._get_param(name='init_tol_m')
+        self.d_out: int = self._get_param(name='d_out')
 
         # Desired Trajectory
         if self.desired_trajectory not in [1,2]:
@@ -75,64 +98,80 @@ class AviaryRiseNode(Node):
         # Fix: Convert parameters to primitive values for config
         self.config: Dict[str, Any] = {k: v.value for k, v in self.get_parameters_by_prefix(prefix='').items()}
         self.traj_gen: TrajectoryGenerator = TrajectoryGenerator(config=self.config)
+        # TrajectoryGenerator reads its traj{1,2}_* keys straight out of self.config by
+        # dict key rather than through _get_param, so mark them used here to keep
+        # _validate_declared_parameters() accurate for whichever trajectory is active.
+        if self.desired_trajectory == 1:
+            self._used_param_names.update([
+                'traj1_center_z_m_ned', 'traj1_period_s', 'traj1_x_amp_m_ned',
+                'traj1_y_amp_m_ned', 'traj1_z_amp_m_ned', 'traj1_alpha_warp',
+            ])
+        elif self.desired_trajectory == 2:
+            self._used_param_names.update([
+                'traj2_center_z_m_ned', 'traj2_petal_radius_m', 'traj2_target_speed_mps',
+            ])
 
         # Safety
-        self.acc_hor_max_mps2: float = self.get_parameter(name='mpc_acc_hor_max_mps2').value
-        self.acc_vert_max_mps2: float = self.get_parameter(name='mpc_acc_vert_max_mps2').value
-        self.safe_x_min_m_ned: float = self.get_parameter(name='safe_x_min_m_ned').value
-        self.safe_x_max_m_ned: float = self.get_parameter(name='safe_x_max_m_ned').value
-        self.safe_y_min_m_ned: float = self.get_parameter(name='safe_y_min_m_ned').value
-        self.safe_y_max_m_ned: float = self.get_parameter(name='safe_y_max_m_ned').value
-        self.safe_z_min_m_ned: float = self.get_parameter(name='safe_z_min_m_ned').value
-        self.safe_z_max_m_ned: float = self.get_parameter(name='safe_z_max_m_ned').value
-        self.odom_timeout_s: float = self.get_parameter(name='odom_timeout_s').value
-        self.init_z_m_ned: float = self.get_parameter(name='init_z_m_ned').value
-        self.odom_watchdog_freq_hz: float = self.get_parameter(name='odom_watchdog_freq_hz').value
+        self.acc_hor_max_mps2: float = self._get_param(name='mpc_acc_hor_max_mps2')
+        self.acc_vert_max_mps2: float = self._get_param(name='mpc_acc_vert_max_mps2')
+        self.safe_x_min_m_ned: float = self._get_param(name='safe_x_min_m_ned')
+        self.safe_x_max_m_ned: float = self._get_param(name='safe_x_max_m_ned')
+        self.safe_y_min_m_ned: float = self._get_param(name='safe_y_min_m_ned')
+        self.safe_y_max_m_ned: float = self._get_param(name='safe_y_max_m_ned')
+        self.safe_z_min_m_ned: float = self._get_param(name='safe_z_min_m_ned')
+        self.safe_z_max_m_ned: float = self._get_param(name='safe_z_max_m_ned')
+        self.odom_timeout_s: float = self._get_param(name='odom_timeout_s')
+        self.init_z_m_ned: float = self._get_param(name='init_z_m_ned')
+        self.odom_watchdog_freq_hz: float = self._get_param(name='odom_watchdog_freq_hz')
+        self.mode_cmd_retry_period_s: float = self._get_param(name='mode_cmd_retry_period_s')
+        self.takeoff_timeout_s: float = self._get_param(name='takeoff_timeout_s')
+
+        self._validate_trajectory_envelope()
 
         # Cost Function (same formula used for post-hoc gain selection in
         # unified_orchestrator.py's compute_trial_J - no t-weighting on tracking error)
-        self.q_e: float = self.get_parameter(name='q_e').value
-        self.r_u: float = self.get_parameter(name='r_u').value
-        self.r_udot: float = self.get_parameter(name='r_udot').value
-        self.w_fail: float = self.get_parameter(name='w_fail').value
+        self.q_e: float = self._get_param(name='q_e')
+        self.r_u: float = self._get_param(name='r_u')
+        self.r_udot: float = self._get_param(name='r_udot')
+        self.w_fail: float = self._get_param(name='w_fail')
 
         if self.controller_type == "pid":
-            self.K_P: float = self.get_parameter(name='K_P').value
-            self.K_I: float = self.get_parameter(name='K_I').value
-            self.K_D: float = self.get_parameter(name='K_D').value
+            self.K_P: float = self._get_param(name='K_P')
+            self.K_I: float = self._get_param(name='K_I')
+            self.K_D: float = self._get_param(name='K_D')
 
         elif self.controller_type in ['baseline', 'integrated_resnet', 'resnet', 'supertwisting']:
-            self.k_1: float = self.get_parameter(name='k_1').value
-            self.k_2: float = self.get_parameter(name='k_2').value
-            self.k_3: float = self.get_parameter(name='k_3').value
+            self.k_1: float = self._get_param(name='k_1')
+            self.k_2: float = self._get_param(name='k_2')
+            self.k_3: float = self._get_param(name='k_3')
 
             if self.controller_type in ['baseline', 'integrated_resnet', 'resnet']:
-                self.K_RISE: float = self.get_parameter(name='k_rise').value
+                self.K_RISE: float = self._get_param(name='k_rise')
                 self.K_P: float = (self.k_1 * self.k_2) + (self.k_1 * self.k_3) + (self.k_2 * self.k_3) + 1.0
                 self.K_I: float = (self.k_1 * self.k_2 * self.k_3) + self.k_1
                 self.K_D: float = self.k_1 + self.k_2 + self.k_3
 
             if self.controller_type in ["resnet", "integrated_resnet"]:
-                self.d_in: int = self.get_parameter(name='d_in').value
+                self.d_in: int = self._get_param(name='d_in')
 
-                self.theta_hat: jax.Array = jnp.array(object=self.get_parameter(name='initial_weights').value)
+                self.theta_hat: jax.Array = jnp.array(object=self._get_param(name='initial_weights'))
 
-                self.gamma_diag: jax.Array = jnp.ones(shape=self.theta_hat.shape[0]) * self.get_parameter(name='gamma').value
-                self.sigma_mod: float = self.get_parameter(name='sigma_mod').value
-                self.theta_bar: float = self.get_parameter(name='theta_bar').value
-                self.theta_dot_bar: float = self.get_parameter(name='theta_dot_bar').value
+                self.gamma_diag: jax.Array = jnp.ones(shape=self.theta_hat.shape[0]) * self._get_param(name='gamma')
+                self.sigma_mod: float = self._get_param(name='sigma_mod')
+                self.theta_bar: float = self._get_param(name='theta_bar')
+                self.theta_dot_bar: float = self._get_param(name='theta_dot_bar')
 
                 self.bound_resnet = jax.jit(partial(
                     resnet_network,
                     d_in=self.d_in,
-                    hidden_width=self.get_parameter(name='hidden_width').value,
+                    hidden_width=self._get_param(name='hidden_width'),
                     d_out=self.d_out,
-                    b=self.get_parameter(name='num_blocks').value,
-                    k_0=self.get_parameter(name='k_0').value,
-                    k_i=self.get_parameter(name='k_i').value,
-                    h_act_func=self.get_parameter(name='h_act_func').value,
-                    o_act_func=self.get_parameter(name='o_act_func').value,
-                    shortcut_act_func=self.get_parameter(name='shortcut_act_func').value,
+                    b=self._get_param(name='num_blocks'),
+                    k_0=self._get_param(name='k_0'),
+                    k_i=self._get_param(name='k_i'),
+                    h_act_func=self._get_param(name='h_act_func'),
+                    o_act_func=self._get_param(name='o_act_func'),
+                    shortcut_act_func=self._get_param(name='shortcut_act_func'),
                 ))
 
                 @jax.jit
@@ -232,7 +271,46 @@ class AviaryRiseNode(Node):
 
         self.offboard_heartbeat_timer = self.create_timer(timer_period_sec=self.control_period_s, callback=self.offboard_heartbeat_callback)
 
+        self._validate_declared_parameters()
+
         self.get_logger().info(f"Node initialized successfully. Controller: {self.controller_type.upper()} | Trajectory: {self.desired_trajectory} | Gazebo mode: {self.is_gazebo}.")
+
+    def _get_param(self, name: str) -> Any:
+        self._used_param_names.add(name)
+        return self.get_parameter(name=name).value
+
+    def _validate_declared_parameters(self) -> None:
+        # The flip side of never falling back to a default: a param name that's declared
+        # (present in the YAML) but never fetched anywhere above is either a typo of a real
+        # name or a stale key left behind by a rename -- both are bugs we want to catch at
+        # startup, not silently ignore. CONTROLLER_CONDITIONAL_PARAM_NAMES is excluded since
+        # a single params.yaml legitimately keeps every controller type's gains declared at
+        # once so switching controller_type doesn't require re-adding them.
+        declared_names: set = set(self.get_parameters_by_prefix(prefix='').keys())
+        unrecognized: set = declared_names - self._used_param_names - CONTROLLER_CONDITIONAL_PARAM_NAMES - GENERATOR_ONLY_PARAM_NAMES
+        if unrecognized:
+            self.get_logger().fatal(f"Unrecognized parameter(s) in YAML, not read by this node: {sorted(unrecognized)}. Check for typos or stale/renamed keys.")
+            raise ValueError(f"Unrecognized parameter(s): {sorted(unrecognized)}.")
+
+    def _validate_trajectory_envelope(self) -> None:
+        # Catches a correctly-named-but-dangerously-valued config (e.g. a trajectory
+        # amplitude that overruns the safety box) at startup instead of discovering it via
+        # a live boundary-breach failsafe mid-flight.
+        if not (self.safe_z_min_m_ned <= self.init_z_m_ned <= self.safe_z_max_m_ned):
+            raise ValueError(f"init_z_m_ned={self.init_z_m_ned} falls outside safe_z bounds [{self.safe_z_min_m_ned}, {self.safe_z_max_m_ned}].")
+
+        num_samples: int = 200
+        for i in range(num_samples + 1):
+            t: float = self.run_length_s * i / num_samples
+            pos, _, _ = self.traj_gen.get_desired_state(t=t)
+            if not (self.safe_x_min_m_ned <= pos[0] <= self.safe_x_max_m_ned):
+                raise ValueError(f"Trajectory x position {pos[0]:.2f}m at t={t:.2f}s falls outside safe_x bounds [{self.safe_x_min_m_ned}, {self.safe_x_max_m_ned}].")
+            if not (self.safe_y_min_m_ned <= pos[1] <= self.safe_y_max_m_ned):
+                raise ValueError(f"Trajectory y position {pos[1]:.2f}m at t={t:.2f}s falls outside safe_y bounds [{self.safe_y_min_m_ned}, {self.safe_y_max_m_ned}].")
+            if not (self.safe_z_min_m_ned <= pos[2] <= self.safe_z_max_m_ned):
+                raise ValueError(f"Trajectory z position {pos[2]:.2f}m at t={t:.2f}s falls outside safe_z bounds [{self.safe_z_min_m_ned}, {self.safe_z_max_m_ned}].")
+
+        self.get_logger().info("Trajectory envelope validated against safety boundaries.")
 
     def precompile_jax(self) -> None:
         dummy_x: jax.Array = jnp.zeros(shape=self.d_in)
@@ -268,12 +346,12 @@ class AviaryRiseNode(Node):
         hot_time: float = time.perf_counter() - start_time
 
         # Reset the weights back to true initial conditions
-        self.theta_hat = jnp.array(object=self.get_parameter(name='initial_weights').value)
+        self.theta_hat = jnp.array(object=self._get_param(name='initial_weights'))
         self.theta_hat.block_until_ready()
         self.get_logger().info(f"Neural network latency: {hot_time*1000:.2f}ms.")
         if hot_time > self.control_period_s:
             self.get_logger().fatal(f"Execution time {hot_time:.4f}s exceeds control_period_s={self.control_period_s:.4f}s limit.")
-            raise CriticalHardwareError("ResNet latency too high for selected control frequency (init).")
+            raise JaxLatencyError("ResNet latency too high for selected control frequency (init).")
 
     def vehicle_status_callback(self, msg: VehicleStatus) -> None:
         self.nav_state = msg.nav_state
@@ -453,8 +531,7 @@ class AviaryRiseNode(Node):
         dt: float,
         t: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        # Pure "given error state, produce u" control law -- mirrors debugging_node's
-        # run_pid. Saturation clamping is deliberately NOT done here: it happens in the
+        # Saturation clamping is deliberately NOT done here: it happens in the
         # caller, after u is recorded into history/cost tracking, so logged/cost-tracked
         # control effort stays pre-saturation while only the published setpoint is clamped
         # (matches the original combined-case ordering exactly). phi_val (the NN
@@ -499,13 +576,16 @@ class AviaryRiseNode(Node):
                         theta_dot_bar=self.theta_dot_bar,
                         gamma_diag=self.gamma_diag,
                         s_mod=self.sigma_mod,
-                        control_saturated=False #self.is_control_saturated
+                        control_saturated=False #self.is_control_saturated # I'm temporarily turning this off on purpose.
                     )
                     self.theta_hat.block_until_ready()
                     t_end_jax: float = time.perf_counter()
                     jax_dt: float = t_end_jax - t_start_jax
                     if jax_dt > self.control_period_s:
-                        self.get_logger().warning(f"JAX execution took {jax_dt*1000:.2f}ms at t={t:.2f}s.")
+                        self.get_logger().warning(f"Running behind! JAX took {jax_dt*1000:.2f}ms at t={t:.2f}s.")
+                    else:
+                        self.get_logger().debug(f"JAX took {jax_dt*1000:.2f}ms.")
+
                     if bool(rate_limited):
                         self.get_logger().debug(f"Theta_hat rate-limited at t={t:.2f}s.")
 
@@ -594,7 +674,7 @@ class AviaryRiseNode(Node):
                 if not self.in_offboard_mode:
                     self.get_logger().info("Waiting for OFFBOARD mode switch...", throttle_duration_sec=2.0)
 
-                    if self.is_gazebo and (current_timestamp_s - self.last_mode_cmd_time_s > 1.0):
+                    if self.is_gazebo and (current_timestamp_s - self.last_mode_cmd_time_s > self.mode_cmd_retry_period_s):
                         self.publish_vehicle_command(command=VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
                         if not self.is_armed:
                             self.publish_vehicle_command(command=VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0, param2=0.0)
@@ -608,7 +688,7 @@ class AviaryRiseNode(Node):
                     else:
                         # Still waiting for arming to complete!
                         self.get_logger().info("OFFBOARD engaged, waiting for vehicle to arm...", throttle_duration_sec=2.0)
-                        if self.is_gazebo and (current_timestamp_s - self.last_mode_cmd_time_s > 1.0):
+                        if self.is_gazebo and (current_timestamp_s - self.last_mode_cmd_time_s > self.mode_cmd_retry_period_s):
                             self.publish_vehicle_command(command=VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0, param2=0.0)
                             self.last_mode_cmd_time_s = current_timestamp_s
 
@@ -643,9 +723,10 @@ class AviaryRiseNode(Node):
                 # hold target get_desired_state() uses during STATE_TAKEOFF doesn't depend
                 # on the trajectory clock, so there's nothing else to update first.
                 q: np.ndarray = np.array(object=self.latest_odom.position, dtype=np.float64)
+                q_dot: np.ndarray = np.array(object=self.latest_odom.velocity, dtype=np.float64)
 
                 if self.is_gazebo:
-                    if (current_timestamp_s - self.takeoff_entry_time_s) > 20.0:
+                    if (current_timestamp_s - self.takeoff_entry_time_s) > self.takeoff_timeout_s:
                         self.cost_J += self.w_fail * (self.run_length_s ** 2)
                         self.get_logger().info(f"[RESULT] Final cost = {self.cost_J:.4f} (takeoff timeout).")
                         self.publish_offboard_heartbeat = False
@@ -662,8 +743,6 @@ class AviaryRiseNode(Node):
                 t: float = 0.0
                 dt: float = self.control_period_s
 
-                q_dot: np.ndarray = np.array(object=self.latest_odom.velocity, dtype=np.float64)
-
                 boundary_err: Optional[str] = self.check_safety_boundary(q=q)
                 if boundary_err is not None:
                     self.cost_J += self.w_fail * ((self.run_length_s - t) ** 2)
@@ -679,25 +758,6 @@ class AviaryRiseNode(Node):
                 u, phi_val = self.compute_control_output(
                     q=q, q_dot=q_dot, qd=qd, qd_dot=qd_dot, qd_ddot=qd_ddot, e=e, e_dot=e_dot, r1=r1, dt=dt, t=t
                 )
-
-                norm_e: float = float(np.linalg.norm(e))
-                norm_u: float = float(np.linalg.norm(u))
-
-                self.time_history.append(t)
-                self.error_norm_history.append(norm_e)
-                self.control_output_norm_history.append(norm_u)
-                self.control_output_history.append(u.tolist())
-                # Jerk isn't tracked during takeoff (there's no prior FOLLOW_TRAJ
-                # sample to difference against, and the fixed-hold controller here
-                # isn't what r_udot penalizes) -- a zero placeholder just keeps this
-                # list index-aligned with the others for write_csv's row loop.
-                self.u_dot_history.append([0.0, 0.0, 0.0])
-                self.q_history.append(q.tolist())
-                self.qd_history.append(qd.tolist())
-
-                if self.controller_type in ["resnet", "integrated_resnet"]:
-                    self.weight_history.append(np.array(object=self.theta_hat).flatten().tolist())
-                    self.phi_history.append(phi_val.tolist())
 
                 self.is_control_saturated = False
                 self.freeze_int_xy = False
@@ -856,7 +916,7 @@ def main(args: Optional[List[str]] = None) -> None:
         node.get_logger().info("Keyboard interrupt received.")
     except ValueError as e:
         node.get_logger().fatal(f"Value error: {e}")
-    except CriticalHardwareError as e:
+    except JaxLatencyError as e:
         node.get_logger().fatal(f"Hardware error: {e}")
     except OdomTimeoutError as e:
         node.get_logger().fatal(f"Odometry timeout: {e}")

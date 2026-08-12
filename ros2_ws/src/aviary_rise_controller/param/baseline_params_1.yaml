@@ -5,13 +5,14 @@ aviary_rise_node:
     d_out: 3
     desired_trajectory: 1
     init_tol_m: 0.2
-    init_z_m_ned: -0.75
+    init_z_m_ned: -1.5
     initial_weight_scale_factor: 1.0
     is_gazebo: true
     k_1: 0.72
     k_2: 0.11
     k_3: 2.4
     k_rise: 0.5
+    mode_cmd_retry_period_s: 1.0
     mpc_acc_hor_max_mps2: 6.0
     mpc_acc_vert_max_mps2: 6.0
     odom_timeout_s: 1.0
@@ -27,13 +28,14 @@ aviary_rise_node:
     safe_z_max_m_ned: 0.5
     safe_z_min_m_ned: -6.5
     save_data: true
+    takeoff_timeout_s: 20.0
     theta_dot_bar: 1000.0
     traj1_alpha_warp: 0.5
     traj1_center_z_m_ned: -0.75
     traj1_period_s: 30.0
     traj1_x_amp_m_ned: 1.5
     traj1_y_amp_m_ned: 3.0
-    traj1_z_amp_m_ned: 5
+    traj1_z_amp_m_ned: 0.25
     traj2_center_z_m_ned: -0.5
     traj2_petal_radius_m: 2.5
     traj2_target_speed_mps: 1.0

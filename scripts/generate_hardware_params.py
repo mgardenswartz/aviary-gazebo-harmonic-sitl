@@ -75,10 +75,6 @@ def main():
     param_dict['odom_watchdog_freq_hz'] = 10.0
     param_dict['vehicle_name'] = 'px4_1' if args.gazebo else 'sentinel5'
 
-    # TEMP overrides
-    param_dict['traj1_z_amp_m_ned'] = 5
-    param_dict['init_z_m_ned'] = -0.75
-
     # Generate initial neural network weights if applicable. best_gains.yaml only ever
     # carries what Optuna actually tuned (gamma, sigma_mod, ...) plus the fixed
     # architecture dict (num_blocks/k_0/k_i/hidden_width) baked in by

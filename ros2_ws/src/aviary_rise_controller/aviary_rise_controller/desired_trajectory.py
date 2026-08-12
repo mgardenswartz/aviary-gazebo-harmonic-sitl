@@ -40,7 +40,7 @@ class TrajectoryGenerator:
                 def dtau_dt(t: float, tau: np.ndarray) -> float:
                     return self.traj1_warp_c * (1.0 - self.traj1_alpha_warp * math.sin(w * tau[0])**2) # type: ignore
                 
-                initial_tau_1 = 0.0 #self.traj1_period_s / 4.0 # Start traj1 1/4 of a period ahead (initial phase tau for that is T/4)
+                initial_tau_1 = self.traj1_period_s / 4.0 # Start traj1 1/4 of a period ahead (initial phase tau for that is T/4)
                 sol1 = solve_ivp(dtau_dt, [0, self.run_length_s], [initial_tau_1], max_step=0.01)
                 self.t_grid_1 = jnp.array(sol1.t)
                 self.tau_grid = jnp.array(sol1.y[0])

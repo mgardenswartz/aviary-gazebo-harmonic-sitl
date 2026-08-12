@@ -9,7 +9,7 @@ aviary_rise_node:
     h_act_func: swish
     hidden_width: 4
     init_tol_m: 0.2
-    init_z_m_ned: -0.75
+    init_z_m_ned: -1.5
     initial_weight_scale_factor: 1.0
     initial_weights:
     - -0.0714195834523294
@@ -169,6 +169,7 @@ aviary_rise_node:
     k_3: 2.4
     k_i: 2
     k_rise: 0.5
+    mode_cmd_retry_period_s: 1.0
     mpc_acc_hor_max_mps2: 6.0
     mpc_acc_vert_max_mps2: 6.0
     num_blocks: 1
@@ -188,6 +189,7 @@ aviary_rise_node:
     save_data: true
     shortcut_act_func: swish
     sigma_mod: 3.0
+    takeoff_timeout_s: 20.0
     theta_bar: 1000000.0
     theta_dot_bar: 1000.0
     traj1_alpha_warp: 0.5
@@ -195,7 +197,7 @@ aviary_rise_node:
     traj1_period_s: 30.0
     traj1_x_amp_m_ned: 1.5
     traj1_y_amp_m_ned: 3.0
-    traj1_z_amp_m_ned: 5
+    traj1_z_amp_m_ned: 0.25
     traj2_center_z_m_ned: -0.5
     traj2_petal_radius_m: 2.5
     traj2_target_speed_mps: 1.0
