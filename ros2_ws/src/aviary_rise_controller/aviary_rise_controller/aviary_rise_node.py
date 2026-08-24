@@ -1,4 +1,5 @@
 import os
+import gc
 import math
 import time
 import csv
@@ -48,6 +49,9 @@ class BoundaryBreachError(Exception):
 class ExperimentFinished(Exception):
     pass
 
+class ControlLoopOverrunError(Exception):
+    pass
+
 # Param names that are only ever fetched for SOME controller_type values (e.g. K_P/K_I/K_D
 # are read when controller_type == 'pid' but not otherwise). A single params.yaml commonly
 # holds gains for every controller type at once so it's quick to switch controller_type
@@ -69,6 +73,12 @@ CONTROLLER_CONDITIONAL_PARAM_NAMES: set = {
 GENERATOR_ONLY_PARAM_NAMES: set = {
     'initial_weight_scale_factor',
 }
+
+# Fraction of control_period_s a single control_timer_callback tick is allowed to consume
+# before it's treated as a real-time violation. Kept as a code constant (not a YAML param):
+# it's a property of the control-loop deadline itself, not something a given experiment
+# should be tuning per run.
+CONTROL_TICK_BUDGET_FRACTION: float = 0.90
 
 class AviaryRiseNode(Node):
     def __init__(self) -> None:
@@ -170,7 +180,7 @@ class AviaryRiseNode(Node):
                 ))
 
                 @jax.jit
-                def compiled_update_step(theta_hat: jax.Array, x_vec: jax.Array, r1_vec: jax.Array, dt: float, theta_bar: float, theta_dot_bar: float, gamma_diag: jax.Array, s_mod: float, control_saturated: bool) -> Tuple[jax.Array, jax.Array, jax.Array]:
+                def compiled_update_step(theta_hat: jax.Array, x_vec: jax.Array, r1_vec: jax.Array, dt: float, theta_bar: float, theta_dot_bar: float, gamma_diag: jax.Array, s_mod: float, control_saturated: bool) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
                     phi_val, vjp_fn = jax.vjp(lambda t: self.bound_resnet(t, x_vec), has_aux=False, *[theta_hat])
                     grad_term = vjp_fn(r1_vec)[0]
                     theta_dot_unprojected = gamma_diag * (grad_term - s_mod * theta_hat)
@@ -178,13 +188,20 @@ class AviaryRiseNode(Node):
                     # the "proj" stage (ball-constrains the state), discrete_rate_projection is
                     # the "sat" stage (caps the resulting effective rate's 2-norm), applied in
                     # that order -- see proj.py for why the order matters.
-                    theta_next_ball = discrete_projection(theta_hat=theta_hat, theta_dot_unprojected=theta_dot_unprojected, dt=dt, theta_bar=theta_bar, gamma_diag=gamma_diag)
+                    theta_next_ball, ball_projected = discrete_projection(theta_hat=theta_hat, theta_dot_unprojected=theta_dot_unprojected, dt=dt, theta_bar=theta_bar, gamma_diag=gamma_diag)
                     theta_next_rate_capped, rate_limited = discrete_rate_projection(theta_hat=theta_hat, theta_next=theta_next_ball, dt=dt, theta_dot_bar=theta_dot_bar)
                     # Control-command saturation dominates both projections above: if the
                     # published acceleration was clamped this tick, freeze theta_hat entirely
                     # rather than merely rate-limiting it.
                     final_theta = jax.lax.select(pred=control_saturated, on_true=theta_hat, on_false=theta_next_rate_capped)
-                    return final_theta, phi_val, rate_limited
+                    # Actual applied per-tick derivative (post-projection/saturation/freeze),
+                    # not the nominal theta_dot_unprojected above -- this is what
+                    # theta_dot_bar actually bounds. dt is a measured (not fixed) period and
+                    # can be 0 on the very first FOLLOW_TRAJ tick; final_theta == theta_hat
+                    # in that case too (see discrete_projection/discrete_rate_projection), so
+                    # the numerator is already 0 and jnp.maximum below just avoids a 0/0 NaN.
+                    theta_hat_dot = (final_theta - theta_hat) / jnp.maximum(dt, 1e-12)
+                    return final_theta, phi_val, ball_projected, rate_limited, theta_hat_dot
 
                 self.compiled_update_step = compiled_update_step
                 self.precompile_jax()
@@ -238,6 +255,10 @@ class AviaryRiseNode(Node):
         self.error_norm_history: List[float] = []
         self.weight_history: List[List[float]] = []
         self.phi_history: List[List[float]] = []
+        self.theta_hat_norm_history: List[float] = []
+        self.theta_hat_dot_norm_history: List[float] = []
+        self.ball_projected_history: List[bool] = []
+        self.rate_limited_history: List[bool] = []
         self.q_history: List[List[float]] = []
         self.qd_history: List[List[float]] = []
 
@@ -307,12 +328,23 @@ class AviaryRiseNode(Node):
 
         self.get_logger().info("Trajectory envelope validated against safety boundaries.")
 
+    def _log_theta_saturation(self, t: float, ball_projected: bool, rate_limited: bool) -> None:
+        # Surfaced at INFO (not DEBUG) since these are meant to be visible in a normal
+        # run: theta_bar/theta_dot_bar are sized to never bind in practice, so either
+        # one firing is itself a signal worth seeing live, not just on request.
+        if ball_projected and rate_limited:
+            self.get_logger().info(f"theta_bar AND theta_dot_bar saturation both triggered at t={t:.2f}s.")
+        elif ball_projected:
+            self.get_logger().info(f"theta_bar (weight-norm ball) saturation triggered at t={t:.2f}s.")
+        elif rate_limited:
+            self.get_logger().info(f"theta_dot_bar (update-rate) saturation triggered at t={t:.2f}s.")
+
     def precompile_jax(self) -> None:
         dummy_x: jax.Array = jnp.zeros(shape=self.d_in)
         dummy_r1: jax.Array = jnp.zeros(shape=self.d_out)
         self.get_logger().info("Compiling XLA graph on CPU...")
 
-        self.theta_hat, _, _ = self.compiled_update_step(
+        self.theta_hat, _, _, _, _ = self.compiled_update_step(
             theta_hat=self.theta_hat,
             x_vec=dummy_x,
             r1_vec=dummy_r1,
@@ -326,7 +358,7 @@ class AviaryRiseNode(Node):
         self.theta_hat.block_until_ready()
 
         start_time: float = time.perf_counter()
-        self.theta_hat, _, _ = self.compiled_update_step(
+        self.theta_hat, _, _, _, _ = self.compiled_update_step(
             theta_hat=self.theta_hat,
             x_vec=dummy_x,
             r1_vec=dummy_r1,
@@ -472,6 +504,8 @@ class AviaryRiseNode(Node):
                     "udotx_mps3", "udoty_mps3", "udotz_mps3",
                     "x_m", "y_m", "z_m", "xd_m", "yd_m", "zd_m"
                 ]
+                if self.controller_type in ["resnet", "integrated_resnet"] and self.theta_hat_norm_history:
+                    headers += ["ThetaHat_Norm", "ThetaHatDot_Norm", "ThetaBar_Projected", "ThetaDotBar_Saturated"]
                 if self.controller_type in ["resnet", "integrated_resnet"] and self.phi_history:
                     num_phi: int = len(self.phi_history[0])
                     headers += [f"Phi{i}_mps2" for i in range(num_phi)]
@@ -487,6 +521,11 @@ class AviaryRiseNode(Node):
                         self.q_history[i][0], self.q_history[i][1], self.q_history[i][2],
                         self.qd_history[i][0], self.qd_history[i][1], self.qd_history[i][2]
                     ]
+                    if self.controller_type in ["resnet", "integrated_resnet"] and self.theta_hat_norm_history:
+                        row += [
+                            self.theta_hat_norm_history[i], self.theta_hat_dot_norm_history[i],
+                            self.ball_projected_history[i], self.rate_limited_history[i]
+                        ]
                     if self.controller_type in ["resnet", "integrated_resnet"] and self.phi_history:
                         row += self.phi_history[i]
                     if self.controller_type in ["resnet", "integrated_resnet"] and self.weight_history:
@@ -525,16 +564,21 @@ class AviaryRiseNode(Node):
         r1: Optional[np.ndarray],
         dt: float,
         t: float,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], bool, bool]:
         # Saturation clamping is deliberately NOT done here: it happens in the
         # caller, after u is recorded into history/cost tracking, so logged/cost-tracked
         # control effort stays pre-saturation while only the published setpoint is clamped
         # (matches the original combined-case ordering exactly). phi_val (the NN
         # feedforward term) is returned alongside u purely for history/CSV logging --
         # it's zero and unused for every controller_type except resnet/integrated_resnet,
-        # where it's already folded into u below.
+        # where it's already folded into u below. theta_hat_dot/ball_projected/rate_limited
+        # are likewise CSV-logging-only and stay at their None/False defaults for every
+        # controller_type except resnet/integrated_resnet.
         u: np.ndarray = np.zeros(shape=self.d_out, dtype=np.float64)
         phi_val: np.ndarray = np.zeros(shape=self.d_out, dtype=np.float64)
+        theta_hat_dot_val: Optional[np.ndarray] = None
+        ball_projected: bool = False
+        rate_limited: bool = False
 
         match self.controller_type:
             case "baseline":
@@ -562,7 +606,7 @@ class AviaryRiseNode(Node):
                     x_vec: jax.Array = jnp.array(object=np.concatenate((q, q_dot, qd, qd_dot)))
 
                     t_start_jax: float = time.perf_counter()
-                    self.theta_hat, phi_out, rate_limited = self.compiled_update_step(
+                    self.theta_hat, phi_out, ball_projected, rate_limited, theta_hat_dot = self.compiled_update_step(
                         theta_hat=self.theta_hat,
                         x_vec=x_vec,
                         r1_vec=jnp.array(object=r1),
@@ -581,10 +625,12 @@ class AviaryRiseNode(Node):
                     else:
                         self.get_logger().debug(f"JAX took {jax_dt*1000:.2f}ms.")
 
-                    if bool(rate_limited):
-                        self.get_logger().debug(f"Theta_hat rate-limited at t={t:.2f}s.")
+                    self._log_theta_saturation(t=t, ball_projected=bool(ball_projected), rate_limited=bool(rate_limited))
 
                     phi_val = np.array(object=phi_out, dtype=np.float64)
+                    theta_hat_dot_val = np.array(object=theta_hat_dot, dtype=np.float64)
+                    ball_projected = bool(ball_projected)
+                    rate_limited = bool(rate_limited)
 
                 current_integrand_res: np.ndarray = (self.K_I * e) + (self.K_RISE * np.sign(r1))
                 delta_int_res: np.ndarray = (dt / 2.0) * (current_integrand_res + self.last_control_integrand)
@@ -601,7 +647,7 @@ class AviaryRiseNode(Node):
                     kappa_vec: jax.Array = jnp.array(object=np.concatenate((q, q_dot, qd, qd_dot, u_last)))
 
                     t_start_jax = time.perf_counter()
-                    self.theta_hat, phi_out, rate_limited = self.compiled_update_step(
+                    self.theta_hat, phi_out, ball_projected, rate_limited, theta_hat_dot = self.compiled_update_step(
                         theta_hat=self.theta_hat,
                         x_vec=kappa_vec,
                         r1_vec=jnp.array(object=r1),
@@ -617,10 +663,13 @@ class AviaryRiseNode(Node):
                     jax_dt = t_end_jax - t_start_jax
                     if jax_dt > self.control_period_s:
                         self.get_logger().warning(f"JAX execution took {jax_dt*1000:.2f}ms at t={t:.2f}s.")
-                    if bool(rate_limited):
-                        self.get_logger().debug(f"Theta_hat rate-limited at t={t:.2f}s.")
+
+                    self._log_theta_saturation(t=t, ball_projected=bool(ball_projected), rate_limited=bool(rate_limited))
 
                     phi_val = np.array(object=phi_out, dtype=np.float64)
+                    theta_hat_dot_val = np.array(object=theta_hat_dot, dtype=np.float64)
+                    ball_projected = bool(ball_projected)
+                    rate_limited = bool(rate_limited)
 
                 current_integrand_int: np.ndarray = (self.K_I * e) + (self.K_RISE * np.sign(r1)) + phi_val
                 delta_int_int: np.ndarray = (dt / 2.0) * (current_integrand_int + self.last_control_integrand)
@@ -637,9 +686,27 @@ class AviaryRiseNode(Node):
                 self.st_integral += sgn_r1 * dt
                 u = qd_ddot + self.k_2 * np.sqrt(norm_r1) * sgn_r1 + self.k_3 * self.st_integral + self.k_1 * e_dot
 
-        return u, phi_val
+        return u, phi_val, theta_hat_dot_val, ball_projected, rate_limited
 
     def control_timer_callback(self) -> None:
+        # Wraps the real tick so *every* code path through it (INIT/TAKEOFF/FOLLOW_TRAJ/
+        # PAUSED, including the JAX call and the publish itself) is covered by one
+        # end-to-end deadline check -- not just the ResNet forward/backward pass. A tick
+        # that runs long enough to eat into PX4's OFFBOARD signal-loss window is a
+        # real-time violation regardless of which line inside the tick was slow.
+        tick_start_s: float = time.perf_counter()
+        self._control_timer_tick()
+        elapsed_s: float = time.perf_counter() - tick_start_s
+        budget_s: float = CONTROL_TICK_BUDGET_FRACTION * self.control_period_s
+        if elapsed_s > budget_s:
+            self.publish_offboard_heartbeat = False
+            raise ControlLoopOverrunError(
+                f"Control tick took {elapsed_s * 1000.0:.2f}ms, exceeding the "
+                f"{CONTROL_TICK_BUDGET_FRACTION:.0%} budget of "
+                f"{budget_s * 1000.0:.2f}ms (control_period_s={self.control_period_s * 1000.0:.2f}ms)."
+            )
+
+    def _control_timer_tick(self) -> None:
         if self.latest_odom is None: return
         current_timestamp_s: float = self.latest_odom.timestamp / 1e6
 
@@ -705,7 +772,7 @@ class AviaryRiseNode(Node):
                 if not self.in_offboard_mode:
                     if self.is_gazebo:
                         self.publish_offboard_heartbeat = False
-                        raise FailsafeTriggeredError("PX4 left OFFBOARD mode during SITL simulation.")
+                        raise FailsafeTriggeredError("PX4 left OFFBOARD mode during SITL simulation (takeoff).")
                     else:
                         self.get_logger().warning("RC pilot intervention detected. Pausing trajectory.", throttle_duration_sec=1.0)
                         self.pre_pause_state = self.experiment_state
@@ -750,7 +817,7 @@ class AviaryRiseNode(Node):
                 e_dot: np.ndarray = qd_dot - q_dot
                 r1: Optional[np.ndarray] = (e_dot + (self.k_1 * e)) if self.controller_type in ['resnet', 'integrated_resnet', 'baseline', 'supertwisting'] else None
 
-                u, phi_val = self.compute_control_output(
+                u, phi_val, _, _, _ = self.compute_control_output(
                     q=q, q_dot=q_dot, qd=qd, qd_dot=qd_dot, qd_ddot=qd_ddot, e=e, e_dot=e_dot, r1=r1, dt=dt, t=t
                 )
 
@@ -782,7 +849,7 @@ class AviaryRiseNode(Node):
                 if not self.in_offboard_mode:
                     if self.is_gazebo:
                         self.publish_offboard_heartbeat = False
-                        raise FailsafeTriggeredError("PX4 left OFFBOARD mode during SITL simulation.")
+                        raise FailsafeTriggeredError("PX4 left OFFBOARD mode during SITL simulation (following trajectory).")
                     else:
                         self.get_logger().warning("RC pilot intervention detected. Pausing trajectory.", throttle_duration_sec=1.0)
                         self.pre_pause_state = self.experiment_state
@@ -809,7 +876,15 @@ class AviaryRiseNode(Node):
                 e_dot: np.ndarray = qd_dot - q_dot
                 r1: Optional[np.ndarray] = (e_dot + (self.k_1 * e)) if self.controller_type in ['resnet', 'integrated_resnet', 'baseline', 'supertwisting'] else None
 
-                u, phi_val = self.compute_control_output(
+                # Snapshot theta_hat as it stood when this tick's control was computed, before
+                # compute_control_output's internal compiled_update_step call reassigns it --
+                # matches the real-hardware CSV convention (weight_history[i] is the weight
+                # actually driving tick i's phi_val/control output, not the post-update value
+                # that only takes effect starting next tick). JAX arrays are immutable, so this
+                # plain reference is already an independent snapshot.
+                theta_hat_at_tick = self.theta_hat if self.controller_type in ["resnet", "integrated_resnet"] else None
+
+                u, phi_val, theta_hat_dot_val, ball_projected, rate_limited = self.compute_control_output(
                     q=q, q_dot=q_dot, qd=qd, qd_dot=qd_dot, qd_ddot=qd_ddot, e=e, e_dot=e_dot, r1=r1, dt=dt, t=t
                 )
 
@@ -824,8 +899,12 @@ class AviaryRiseNode(Node):
                 self.qd_history.append(qd.tolist())
 
                 if self.controller_type in ["resnet", "integrated_resnet"]:
-                    self.weight_history.append(np.array(object=self.theta_hat).flatten().tolist())
+                    self.weight_history.append(np.array(object=theta_hat_at_tick).flatten().tolist())
                     self.phi_history.append(phi_val.tolist())
+                    self.theta_hat_norm_history.append(float(np.linalg.norm(np.array(object=theta_hat_at_tick))))
+                    self.theta_hat_dot_norm_history.append(float(np.linalg.norm(theta_hat_dot_val)) if theta_hat_dot_val is not None else 0.0)
+                    self.ball_projected_history.append(bool(ball_projected))
+                    self.rate_limited_history.append(bool(rate_limited))
 
                 current_error_sq: float = float(norm_e ** 2)
                 current_u_sq: float = float(norm_u ** 2)
@@ -901,6 +980,14 @@ class AviaryRiseNode(Node):
                     raise ExperimentFinished("Trajectory completed successfully.")
 
 def main(args: Optional[List[str]] = None) -> None:
+    # The cyclic GC is a latency-jitter source we don't need: this process runs one
+    # bounded experiment and exits, so there's no long-run leak risk to guard against,
+    # and refcounting alone still reclaims everything that isn't part of a reference
+    # cycle. Disabling it removes an unpredictable stop-the-world pause from the hot
+    # control loop, where a single missed control_period_s can bleed into PX4's
+    # COM_OF_LOSS_T offboard-signal-loss window.
+    gc.disable()
+
     rclpy.init(args=args)
     node: AviaryRiseNode = AviaryRiseNode()
     try:
@@ -919,6 +1006,8 @@ def main(args: Optional[List[str]] = None) -> None:
         node.get_logger().fatal(f"Failsafe triggered: {e}")
     except BoundaryBreachError as e:
         node.get_logger().fatal(f"Boundary breach: {e}")
+    except ControlLoopOverrunError as e:
+        node.get_logger().fatal(f"Control loop overrun: {e}")
     finally:
         node.get_logger().info("Commanding vehicle to land.")
         node.land_vehicle()

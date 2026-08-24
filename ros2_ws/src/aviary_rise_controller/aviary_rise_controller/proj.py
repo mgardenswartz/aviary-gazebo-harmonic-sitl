@@ -8,9 +8,14 @@ def discrete_projection(
     dt: float,
     theta_bar: float,
     gamma_diag: jax.Array
-) -> jax.Array:
+) -> tuple[jax.Array, jax.Array]:
     theta_temp = theta_hat + dt * theta_dot_unprojected
+    # theta_bar is a norm bound on the whole weight vector (jnp.sum(theta**2) is
+    # ||theta||^2), not a per-weight bound -- is_inside is False, i.e. the ball
+    # projection actually shrinks theta_temp, only once ||theta_temp|| itself exceeds
+    # theta_bar.
     is_inside = jnp.sum(theta_temp**2) <= theta_bar**2
+    ball_projected = jnp.logical_not(is_inside)
     
     def apply_projection(_: None) -> jax.Array:
         gamma_min = jnp.min(gamma_diag)
@@ -34,7 +39,8 @@ def discrete_projection(
     def bypass_projection(_: None) -> jax.Array:
         return theta_temp
 
-    return jax.lax.cond(is_inside, bypass_projection, apply_projection, None) # type: ignore
+    theta_next: jax.Array = jax.lax.cond(is_inside, bypass_projection, apply_projection, None) # type: ignore
+    return theta_next, ball_projected
 
 @jax.jit
 def discrete_rate_projection(

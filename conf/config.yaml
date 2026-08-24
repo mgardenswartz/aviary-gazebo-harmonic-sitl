@@ -18,7 +18,7 @@ aviary_rise_node:
     mode_cmd_retry_period_s: 1.0
     takeoff_timeout_s: 20.0
     
-    initial_weight_scale_factor: 1.0
+    initial_weight_scale_factor: 0.1
 
     traj1_period_s: 30.0
     traj1_alpha_warp: 0.5
@@ -33,7 +33,7 @@ aviary_rise_node:
     vehicle_name: 'px4_1'
     control_frequency_hz: 50.0
     save_data: True
-    run_length_s: 30.0
+    run_length_s: 60.0
     
     q_e: 1.0
     r_u: 0.0 #0.001

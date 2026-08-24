@@ -6,7 +6,7 @@ aviary_rise_node:
     desired_trajectory: 1
     init_tol_m: 0.2
     init_z_m_ned: -1.5
-    initial_weight_scale_factor: 1.0
+    initial_weight_scale_factor: 0.1
     is_gazebo: true
     k_1: 0.72
     k_2: 0.11
@@ -20,7 +20,7 @@ aviary_rise_node:
     q_e: 1.0
     r_u: 0.0
     r_udot: 0.0
-    run_length_s: 30.0
+    run_length_s: 60.0
     safe_x_max_m_ned: 5.0
     safe_x_min_m_ned: -5.0
     safe_y_max_m_ned: 11.5

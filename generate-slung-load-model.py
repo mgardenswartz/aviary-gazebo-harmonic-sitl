@@ -34,14 +34,6 @@ ROD_MASS_KG = 0.02  # ~8% of PAYLOAD_MASS_KG=0.25 -- was 0.001 (a ~250:1 ratio t
 PAYLOAD_RADIUS_M = 0.035
 PAYLOAD_HEIGHT_M = 0.20
 
-# NOTE on ROD_LENGTH_M vs the real hardware's observed period: for a pendulum, T = 2*pi*
-# sqrt(L_eff/g). A real 1.5s period implies L_eff = g*(T/2*pi)^2 ~= 0.56m (pivot to the
-# water's center of mass). At ROD_LENGTH_M=0.15, our pivot-to-payload-CG distance is only
-# ~0.15+PAYLOAD_HEIGHT_M/2 = 0.25m, predicting a ~1.0s period -- noticeably faster than the
-# real hardware. If matching the real oscillation frequency (not just its decay) matters,
-# ROD_LENGTH_M likely needs to go back up, not down. Not changed here since it was just set
-# deliberately -- flagging for a follow-up pass.
-
 # Real aerodynamic quadratic drag via the gz-sim Hydrodynamics system plugin (confirmed installed
 # on this host: /usr/lib/x86_64-linux-gnu/libgz-sim8-hydrodynamics-system.so, parameter names
 # verified against /usr/share/gz/gz-sim8/worlds/auv_controls.sdf). velocity_decay was tried first

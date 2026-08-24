@@ -5,7 +5,7 @@ cd /home/root/voxl-px4/px4-firmware
 git config --global --add safe.directory '*'
 make px4_sitl gz_sentinel_vision
 
-MAKING PARAMS
+MAKING PARAMS (outside Docker)
 GAZEBO=true
 python scripts/generate_hardware_params.py --best_gains best_gains.yaml --controller_type pid --out ros2_ws/src/aviary_rise_controller/param/pid_params_1.yaml --gazebo $GAZEBO --desired_trajectory 1
 python scripts/generate_hardware_params.py --best_gains best_gains.yaml --controller_type integrated_resnet --out ros2_ws/src/aviary_rise_controller/param/integrated_resnet_params_1.yaml --gazebo $GAZEBO --desired_trajectory 1
@@ -19,11 +19,11 @@ source venv_host/bin/activate
 pip install -e .
 pip install --upgrade pip
 
-RUNNING THE SIM
-Terminal 1
+RUNNING THE SIM 
+Terminal 1 (outside docker)
 ./shutdown-background-services.sh && ./spawn-sim-env.sh 
 
-Terminal 2
+Terminal 2 (inside Docker)
 cd /home/root
 apt install python3.10-venv -y
 git clone --branch v1.2.1 https://github.com/mgardenswartz/resnet.git
@@ -40,12 +40,13 @@ sed -i '1s|^.*$|#!/home/root/venv_docker/bin/python3|' install/aviary_rise_contr
 source /home/root/ros-sources.sh
 
 ros2 run aviary_rise_controller aviary_rise_controller --ros-args --params-file /home/root/ros2_ws/src/aviary_rise_controller/param/params.yaml
+
 DESIRED_TRAJECTORY=1 && ros2 run aviary_rise_controller aviary_rise_controller --ros-args --params-file "/home/root/ros2_ws/src/aviary_rise_controller/param/baseline_params_${DESIRED_TRAJECTORY}.yaml"
 DESIRED_TRAJECTORY=1 && ros2 run aviary_rise_controller aviary_rise_controller --ros-args --params-file "/home/root/ros2_ws/src/aviary_rise_controller/param/resnet_params_${DESIRED_TRAJECTORY}.yaml"
 DESIRED_TRAJECTORY=1 && ros2 run aviary_rise_controller aviary_rise_controller --ros-args --params-file "/home/root/ros2_ws/src/aviary_rise_controller/param/integrated_resnet_params_${DESIRED_TRAJECTORY}.yaml"
 DESIRED_TRAJECTORY=1 && ros2 run aviary_rise_controller aviary_rise_controller --ros-args --params-file "/home/root/ros2_ws/src/aviary_rise_controller/param/pid_params_${DESIRED_TRAJECTORY}.yaml"
 
-PLOTTING DATA
+PLOTTING DATA (Outside docker)
 sudo chmod -R 777 plot_data/
 python3 scripts/plot_csv_results.py plot_data/resnet/figure_eight/run_1.csv
 python3 scripts/plot_csv_results.py plot_data/integrated_resnet/figure_eight/run_1.csv
