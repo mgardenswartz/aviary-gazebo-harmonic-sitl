@@ -4,7 +4,7 @@
   <name>aviary_rise_controller</name>
   <version>0.3.0</version>
   <description>Acceleration-level second-order RISE controller</description>
-  <maintainer email="max.gardenswartz@proton.me">Max Gardenswartz</maintainer>
+  <maintainer email="mgardenswartz@ufl.edu">Max Gardenswartz</maintainer>
   <license>Apache-2.0</license>
 
   <test_depend>ament_copyright</test_depend>
