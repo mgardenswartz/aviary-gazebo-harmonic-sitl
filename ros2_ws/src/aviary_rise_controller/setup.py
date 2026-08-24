@@ -6,7 +6,7 @@ package_name = 'aviary_rise_controller'
 
 setup(
     name=package_name,
-    version='0.2.0',
+    version='0.3.0',
     packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -17,7 +17,7 @@ setup(
     zip_safe=True,
     maintainer='Max Gardenswartz',
     maintainer_email='mgardenswartz@ufl.edu',
-    description='Second-order RISE controller',
+    description='Second-order RISE controller for the Aviary',
     license='Apache-2.0',
     install_requires=[
         'setuptools',
