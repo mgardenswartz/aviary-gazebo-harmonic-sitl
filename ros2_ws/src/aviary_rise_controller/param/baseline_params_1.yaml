@@ -21,12 +21,12 @@ aviary_rise_node:
     r_u: 0.0
     r_udot: 0.0
     run_length_s: 60.0
-    safe_x_max_m_ned: 28.0
-    safe_x_min_m_ned: -28.0
-    safe_y_max_m_ned: 7.0
-    safe_y_min_m_ned: -7.0
-    safe_z_max_m_ned: 0.1
-    safe_z_min_m_ned: -6.0
+    safe_x_max_m_ned: 5.0
+    safe_x_min_m_ned: -5.0
+    safe_y_max_m_ned: 11.5
+    safe_y_min_m_ned: -11.5
+    safe_z_max_m_ned: 0.5
+    safe_z_min_m_ned: -6.5
     save_data: true
     takeoff_timeout_s: 20.0
     theta_dot_bar: 1000.0

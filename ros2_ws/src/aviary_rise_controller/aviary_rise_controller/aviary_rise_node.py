@@ -183,7 +183,7 @@ class AviaryRiseNode(Node):
                 def compiled_update_step(theta_hat: jax.Array, x_vec: jax.Array, r1_vec: jax.Array, dt: float, theta_bar: float, theta_dot_bar: float, gamma_diag: jax.Array, s_mod: float, control_saturated: bool) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
                     phi_val, vjp_fn = jax.vjp(lambda t: self.bound_resnet(t, x_vec), has_aux=False, *[theta_hat])
                     grad_term = vjp_fn(r1_vec)[0]
-                    theta_dot_unprojected = gamma_diag * (grad_term - s_mod * theta_hat)
+                    theta_dot_unprojected = gamma_diag * grad_term - s_mod * theta_hat # WARNING!!!
                     # theta_hat_dot = sat(proj(nominal_theta_hat_dot)): discrete_projection is
                     # the "proj" stage (ball-constrains the state), discrete_rate_projection is
                     # the "sat" stage (caps the resulting effective rate's 2-norm), applied in
@@ -243,6 +243,8 @@ class AviaryRiseNode(Node):
         self.last_cost_integrand: float = 0.0
         self.error_sq_integral: float = 0.0
         self.last_error_sq: float = 0.0
+        self.vel_error_sq_integral: float = 0.0
+        self.last_vel_error_sq: float = 0.0
         self.u_sq_integral: float = 0.0
         self.last_u_sq: float = 0.0
         self.u_dot_sq_integral: float = 0.0
@@ -253,6 +255,7 @@ class AviaryRiseNode(Node):
         self.control_output_history: List[List[float]] = []
         self.u_dot_history: List[List[float]] = []
         self.error_norm_history: List[float] = []
+        self.vel_error_norm_history: List[float] = []
         self.weight_history: List[List[float]] = []
         self.phi_history: List[List[float]] = []
         self.theta_hat_norm_history: List[float] = []
@@ -499,7 +502,7 @@ class AviaryRiseNode(Node):
             with open(file=csv_filename, mode='w', newline='') as file:
                 writer = csv.writer(file)
                 headers: List[str] = [
-                    "Time_s", "Error_Norm_m", "Control_Output_Norm_mps2",
+                    "Time_s", "Error_Norm_m", "Vel_Error_Norm_mps", "Control_Output_Norm_mps2",
                     "ux_mps2", "uy_mps2", "uz_mps2",
                     "udotx_mps3", "udoty_mps3", "udotz_mps3",
                     "x_m", "y_m", "z_m", "xd_m", "yd_m", "zd_m"
@@ -515,7 +518,7 @@ class AviaryRiseNode(Node):
                 writer.writerow(headers)
                 for i in range(len(self.time_history)):
                     row: List[float] = [
-                        self.time_history[i], self.error_norm_history[i], self.control_output_norm_history[i],
+                        self.time_history[i], self.error_norm_history[i], self.vel_error_norm_history[i], self.control_output_norm_history[i],
                         self.control_output_history[i][0], self.control_output_history[i][1], self.control_output_history[i][2],
                         self.u_dot_history[i][0], self.u_dot_history[i][1], self.u_dot_history[i][2],
                         self.q_history[i][0], self.q_history[i][1], self.q_history[i][2],
@@ -889,10 +892,12 @@ class AviaryRiseNode(Node):
                 )
 
                 norm_e: float = float(np.linalg.norm(e))
+                norm_e_dot: float = float(np.linalg.norm(e_dot))
                 norm_u: float = float(np.linalg.norm(u))
 
                 self.time_history.append(t)
                 self.error_norm_history.append(norm_e)
+                self.vel_error_norm_history.append(norm_e_dot)
                 self.control_output_norm_history.append(norm_u)
                 self.control_output_history.append(u.tolist())
                 self.q_history.append(q.tolist())
@@ -907,6 +912,7 @@ class AviaryRiseNode(Node):
                     self.rate_limited_history.append(bool(rate_limited))
 
                 current_error_sq: float = float(norm_e ** 2)
+                current_vel_error_sq: float = float(norm_e_dot ** 2)
                 current_u_sq: float = float(norm_u ** 2)
 
                 if not self.cost_started or dt <= 0:
@@ -927,6 +933,7 @@ class AviaryRiseNode(Node):
                 if not self.cost_started:
                     # Seed the history at exact start to prevent trapezoidal integration jump
                     self.last_error_sq = current_error_sq
+                    self.last_vel_error_sq = current_vel_error_sq
                     self.last_u_sq = current_u_sq
                     self.last_u_dot_sq = current_u_dot_sq
                     self.last_cost_integrand = current_cost_integrand
@@ -934,6 +941,9 @@ class AviaryRiseNode(Node):
 
                 self.error_sq_integral += (dt / 2.0) * (current_error_sq + self.last_error_sq)
                 self.last_error_sq = current_error_sq
+
+                self.vel_error_sq_integral += (dt / 2.0) * (current_vel_error_sq + self.last_vel_error_sq)
+                self.last_vel_error_sq = current_vel_error_sq
 
                 self.u_sq_integral += (dt / 2.0) * (current_u_sq + self.last_u_sq)
                 self.last_u_sq = current_u_sq
@@ -971,10 +981,12 @@ class AviaryRiseNode(Node):
 
                 if t >= self.run_length_s:
                     rms_error: float = math.sqrt(self.error_sq_integral / self.run_length_s) if self.run_length_s > 0 else 0.0
+                    rms_vel_error: float = math.sqrt(self.vel_error_sq_integral / self.run_length_s) if self.run_length_s > 0 else 0.0
                     rms_u: float = math.sqrt(self.u_sq_integral / self.run_length_s) if self.run_length_s > 0 else 0.0
                     rms_u_dot: float = math.sqrt(self.u_dot_sq_integral / self.run_length_s) if self.run_length_s > 0 else 0.0
                     self.get_logger().info(f"[RESULT] Final cost = {self.cost_J:.2f}.")
-                    self.get_logger().info(f"[RESULT] RMS error = {rms_error:.4f}.")
+                    self.get_logger().info(f"[RESULT] RMS position tracking  error = {rms_error:.4f}.")
+                    self.get_logger().info(f"[RESULT] RMS velocity tracking error = {rms_vel_error:.4f}.")
                     self.get_logger().info(f"[RESULT] RMS control effort = {rms_u:.3f}.")
                     self.get_logger().info(f"[RESULT] RMS control jerk = {rms_u_dot:.3f}.")
                     raise ExperimentFinished("Trajectory completed successfully.")

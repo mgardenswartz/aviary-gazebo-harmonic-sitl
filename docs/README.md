@@ -20,7 +20,7 @@ If using an existing ros2 docker image as your base image, update "run-ros2-cont
 
 ```
 sudo docker run --rm -it --net=host --ipc=host --pid=host --privileged -v /dev/shm:/dev/shm -e DISPLAY=$DISPLAY -v /dev/input:/dev/input:rw -v /tmp/.X11-unix:/tmp/.X11-unix:ro -v $SIM_DIRECTORY:/home/root:rw -w /home/root --name=ros2humble <the name of your ros2 docker image> /bin/bash -l
-```
+```open o
 
 3. Open a terminal, navigate to the voxl-px4-sitl directory, make shell scripts executable and open a container with the ros2 base image
 
@@ -31,6 +31,14 @@ chmod +x run*
 chmod +x spawn*
 chmod +x shutdown*
 chmod +x start*
+sad
+f
+sadfsadf
+sadf
+sad
+f
+sdaf
+
 chmod +x update*
 chmod +x install*
 chmod +x connect*    

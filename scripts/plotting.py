@@ -93,7 +93,7 @@ def _plot_control_diagnostics(
 def run_post_flight_analysis(
     latest_csv: str,
     write_plots: bool = True,
-    write_animation: bool = True,
+    write_animation: bool = False,
     cost: float | None = None,
     e_rms: float | None = None,
     u_rms: float | None = None,

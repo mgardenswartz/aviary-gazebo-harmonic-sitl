@@ -50,8 +50,8 @@ PAYLOAD_HEIGHT_M = 0.20
 # means literal air density once it's this large -- it's sized to reproduce the observed
 # decay rate, not to be physically accurate. Retune by feel; there's no principled way to
 # derive the "right" value here for an unmodeled mechanism.
-AIR_DENSITY_KG_M3 = 1.225*10
-CD_CROSSFLOW = 1.1  # cylinder broadside to the flow (its long axis perpendicular to velocity)
+AIR_DENSITY_KG_M3 = 1.225
+CD_CROSSFLOW = 20.0 #1.1  # cylinder broadside to the flow (its long axis perpendicular to velocity)
 CD_AXIAL = 0.9       # flat-ended cylinder moving along its own long axis
 
 # Openly pragmatic, NOT first-principles like CD_CROSSFLOW/CD_AXIAL above -- the raw

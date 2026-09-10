@@ -5,7 +5,7 @@ aviary_rise_node:
     d_in: 12
     d_out: 3
     desired_trajectory: 1
-    gamma: 0.1
+    gamma: 2.0
     h_act_func: swish
     hidden_width: 12
     init_tol_m: 0.2
@@ -1847,7 +1847,7 @@ aviary_rise_node:
     safe_z_min_m_ned: -6.5
     save_data: true
     shortcut_act_func: swish
-    sigma_mod: 1.0
+    sigma_mod: 10.0
     takeoff_timeout_s: 20.0
     theta_bar: 1000000.0
     theta_dot_bar: 1000.0
