@@ -39,6 +39,13 @@ else
     cp -r /home/root/px4-updates/models /home/root/voxl-px4/px4-firmware/Tools/simulation/gz/
 
     #####################################################################
+    # Upload worlds (depot.sdf carries the aviary::LocalizedWindPlugin blocks; the
+    # stock Tools/simulation/gz/worlds copies have no wind)
+    echo "Copying updated world files to px4-firmware/Tools/simulation/gz/"
+
+    cp -r /home/root/px4-updates/worlds /home/root/voxl-px4/px4-firmware/Tools/simulation/gz/
+
+    #####################################################################
     # Startup scripts
     echo "Copying updated startup scripts to px4-firmware/ROMFS/px4fmu_common/init.d-posix"
 

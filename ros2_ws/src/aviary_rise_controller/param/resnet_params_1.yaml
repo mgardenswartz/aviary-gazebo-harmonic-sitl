@@ -5,7 +5,7 @@ aviary_rise_node:
     d_in: 12
     d_out: 3
     desired_trajectory: 1
-    gamma: 2.0
+    gamma: 10.0
     h_act_func: swish
     hidden_width: 12
     init_tol_m: 0.2

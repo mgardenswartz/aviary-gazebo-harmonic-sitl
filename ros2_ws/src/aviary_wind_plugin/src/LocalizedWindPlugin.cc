@@ -1,4 +1,6 @@
 #include <gz/plugin/Register.hh>
+#include <gz/transport/Node.hh>
+#include <gz/msgs/vector3d.pb.h>
 #include <gz/sim/System.hh>
 #include <gz/sim/Link.hh>
 #include <gz/sim/Model.hh>
@@ -65,6 +67,12 @@ namespace aviary
             } else {
                 gzerr << "[Aviary Wind] No <wind_zone> elements found in SDF!" << std::endl;
             }
+
+            // Applied force for this model+link, published every tick (zero when outside all
+            // zones). Verify wind is live with:  gz topic -e -t <topic>
+            this->forceTopic = "/aviary/wind/force/" + this->targetModelName + "/" + this->targetLinkName;
+            this->forcePub = this->node.Advertise<gz::msgs::Vector3d>(this->forceTopic);
+            gzmsg << "[Aviary Wind] Publishing applied force on " << this->forceTopic << std::endl;
         }
 
         void PreUpdate(const gz::sim::UpdateInfo &_info,
@@ -88,6 +96,9 @@ namespace aviary
                 }
 
                 if (this->linkEntity == gz::sim::kNullEntity) return;
+
+                gzmsg << "[Aviary Wind] Bound to " << this->targetModelName << "/"
+                      << this->targetLinkName << " -- wind active." << std::endl;
             }
 
             gz::sim::Link link(this->linkEntity);
@@ -146,6 +157,15 @@ namespace aviary
             }
             this->was_in_zone = currently_in_zone;
 
+            // Publish the applied force (every tick, including zero) for external monitoring.
+            {
+                gz::msgs::Vector3d fmsg;
+                fmsg.set_x(total_force.X());
+                fmsg.set_y(total_force.Y());
+                fmsg.set_z(total_force.Z());
+                this->forcePub.Publish(fmsg);
+            }
+
             // Apply the physics
             if (currently_in_zone) {
                 gz::msgs::Wrench wrenchMsg;
@@ -169,6 +189,9 @@ namespace aviary
         std::vector<WindZone> zones;
         std::mt19937 gen;
         bool was_in_zone = false;
+        gz::transport::Node node;
+        gz::transport::Node::Publisher forcePub;
+        std::string forceTopic;
     };
 }
 

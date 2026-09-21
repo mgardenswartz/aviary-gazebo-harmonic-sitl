@@ -140,55 +140,30 @@ param set-default THR_MDL_FAC 0.8
 # landing once its run ends.
 param set-default COM_OBL_RC_ACT 5
 
-# prepare to add noise to the sim
-# Units/semantics verified directly against src/modules/ekf2/ekf2_params.c in this branch.
-param set-default EKF2_EV_CTRL 15 # bitmask: horiz pos + vert pos + 3D vel + yaw (matches compiled default)
-param set-default EKF2_EVP_NOISE 0.01
-param set-default EKF2_EVV_NOISE 0.02
-# Deliberately NOT set to PX4's hard floor (0.01) in the NOISE_AND_DELAYS_ON=false ablation arm
-# despite that mode injecting zero noise. Confirmed via ulog analysis (2026-08-05): a transient
-# vel_test_ratio spike during the takeoff-ramp transition happens in BOTH ablation arms (real,
-# non-injected tracking lag -- ground-truth bridge timing jitter, ~30Hz/4-56ms instead of the
-# configured 250Hz -- not a bug in the noise/jitter injection itself). At the 0.01 floor, PX4's
-# stricter noise assumption gave that same shared spike ~4x higher test_ratio (test_ratio scales
-# as 1/noise^2) and let it sustain long enough (~2s) to trip "Navigation failure"; the 0.02
-# (matching the true-branch value below) recovers quickly instead, like the true branch already
-# does. Kept unconditional/equal in both branches so the ablation isolates the injected noise/
-# jitter, not PX4's assumed-noise margin.
-# rad. Was "001" (=1, missing the decimal point). NOTE: PX4 documents @min 0.05 rad for this param --
-# 0.01 is below that floor. Kept at 0.01 to match sensor_noise_profile.json exactly; verify PX4 doesn't
-# silently clamp or reject it at runtime.
-param set-default EKF2_EVA_NOISE 0.01
-param set-default EKF2_MAG_TYPE 5 # none; disable magnetometer since we're simulating an indoor environment with mocap. Already correct (verified: @value 5 None).
-# Was "0", which does the opposite of the comment: 0 = trust the message's own reported covariance,
-# using EKF2_EVx_NOISE only as a lower bound. 1 = ignore message covariance, use EKF2_EVx_NOISE directly.
+# --- External vision (mocap) fusion ---
+# EKF2_EV_CTRL bitmask: horiz pos + vert pos + 3D vel + yaw.
+param set-default EKF2_EV_CTRL 15
+# EKF2_EV_NOISE_MD=1: ignore the message's covariance fields, use the EKF2_EVx_NOISE values
+# below directly as the measurement noise.
 param set-default EKF2_EV_NOISE_MD 1
-
-# EKF2_EV_DELAY is unconditional -- 13.9ms regardless of NOISE_AND_DELAYS_ON. Measured
-# empirically two ways now: by Cristian Nino on real hardware, and independently confirmed in
-# this sim pipeline via vision_odometry_noise_node's own [DIAG] instrumentation, which showed
-# PX4's uXRCE-DDS client only effectively consuming vehicle_visual_odometry at ~28-30ms
-# intervals (~33Hz) regardless of how fast this node publishes into it (up to 250Hz) --
-# meaning a real, structural ~13-15ms average pipeline latency exists even in the
-# "synchronous, zero added latency" arm, so 0ms was never actually correct there either.
-# Deliberately NOT part of the NOISE_AND_DELAYS_ON switch below anymore -- see that comment.
+# Assumed EV measurement noise. Kept at PX4 defaults (0.1), NOT matched down to the noise
+# generator's injected std. The default gives a fixed innovation-rejection threshold of
+# gate*noise = 0.3 m/s (vel) / 0.5 m (pos), which absorbs both the injected noise AND the
+# ~0.25 m/s tracking lag from the 33 Hz / ~14 ms EV pipeline. If you raise the generator noise
+# (params/vision_odometry_noise.yaml), raise these to match: EKF2_EVx_NOISE = max(0.1, std).
+param set-default EKF2_EVP_NOISE 0.1
+param set-default EKF2_EVV_NOISE 0.1
+param set-default EKF2_EVA_NOISE 0.1
+# Measured end-to-end EV latency (Cristian Nino on hardware; confirmed in sim via the noise
+# node's [DIAG] pub_latency line). PX4's uXRCE-DDS client consumes vehicle_visual_odometry at
+# ~33 Hz regardless of publish rate, giving a structural ~14 ms pipeline delay.
 param set-default EKF2_EV_DELAY 13.9
+# No magnetometer: indoor mocap environment.
+param set-default EKF2_MAG_TYPE 5
 
-# Ablation switch. Only affects vision_odometry_noise_node's own behavior now (its
-# noise_and_delays_enabled ROS 2 param, forwarded here as an env var by spawn-sim-env.sh and
-# to the noise node by run-vision-odometry-noise-node.sh) -- true: realistic noisy/jittered
-# vision measurements. false: true ground truth, published synchronously with zero added
-# noise. Nothing on the PX4 side depends on this anymore (EKF2_EVV_NOISE/EKF2_EVP_NOISE above
-# and EKF2_EV_DELAY above are all unconditional now), so PX4's assumed vision noise/delay
-# stays fixed regardless of which arm is running -- the ablation isolates purely what the
-# noise node injects, not PX4's own trust level.
-#
-# Safety note: this can't make PX4 overconfident even so. EKF2 hard-floors the assumed vision
-# position/velocity/yaw measurement variance at sq(0.01) (1cm / 1cm/s minimum assumed noise)
-# in code -- src/modules/ekf2/EKF/ev_vel_control.cpp, ev_pos_control.cpp, ev_yaw_control.cpp,
-# and again redundantly in vel_pos_fusion.cpp's updateVelocityAidSrcStatus/
-# updateHorizontalPositionAidSrcStatus/updateVerticalPositionAidSrcStatus -- regardless of
-# what EKF2_EVx_NOISE or the message's own covariance says.
+# Ablation switch, forwarded to vision_odometry_noise_node (spawn-sim-env.sh -> env var ->
+# run-vision-odometry-noise-node.sh). true: noisy/jittered vision. false: clean ground truth.
+# Nothing on the PX4 side depends on it -- the EKF2_EV* params above are unconditional.
 NOISE_AND_DELAYS_ON=${NOISE_AND_DELAYS_ON:=true}
 
 

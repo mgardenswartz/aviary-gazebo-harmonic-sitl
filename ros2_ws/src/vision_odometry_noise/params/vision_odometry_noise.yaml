@@ -25,38 +25,23 @@
       # plugin via gz_odom.yaml (nav_msgs/Odometry on /model/<vehicle_name>/odometry).
       ground_truth_topic: ""         # empty = derive as /model/<vehicle_name>/odometry
 
-      # Noise, per sensor_noise_profile.json. Independent zero-mean Gaussian per channel.
-      # Matched on the PX4 side too (EKF2_EVP_NOISE/EKF2_EVV_NOISE/EKF2_EVA_NOISE in
-      # 4100_gz_sentinel) so PX4 trusts these appropriately.
+      # Injected noise: independent zero-mean Gaussian per channel, std below.
+      # If you change these, set the PX4 side to EKF2_EVx_NOISE = max(0.1, std) in
+      # 4100_gz_sentinel (0.1 = the default floor that absorbs the EV pipeline lag).
       position_noise_std_m: 0.01
       velocity_noise_std_mps: 0.02
       orientation_noise_std_rad: 0.01
 
-      # Position/velocity noise is truncated at +/- clip_sigma standard deviations (per axis).
-      # Still Gaussian in the bulk -- this only truncates the tails, it doesn't change scale.
-      #
-      # Sizing this against PX4's actual EKF2 innovation gate, not a guess (verified directly
-      # against this branch's src/modules/ekf2/EKF/ev_vel_control.cpp, ev_pos_control.cpp,
-      # ekf.h::setEstimatorAidStatusTestRatio, and EKF2.cpp's EKF2_EV_NOISE_MD handling):
-      #   test_ratio = innovation^2 / (gate^2 * (P_ii + observation_variance))
-      # Because EKF2_EV_NOISE_MD=1, observation_variance is forced to exactly
-      # EKF2_EVV_NOISE^2 / EKF2_EVP_NOISE^2 (our published variance fields are ignored). P_ii
-      # (the EKF's own velocity/position state covariance) only ever adds margin, so the
-      # worst case (P_ii -> 0, tightly converged filter) rejects once
-      #   |innovation| > gate * EKF2_EVx_NOISE
-      # With this repo's airframe values -- EKF2_EVV_GATE=3.0 (compiled default, unreferenced/
-      # unoverridden anywhere in this repo) and EKF2_EVV_NOISE=0.02 -- that boundary is
-      # 3.0*0.02 = 0.06 m/s. A 3-sigma clip is 3*0.02 = 0.06 m/s: EXACTLY on that boundary
-      # (test_ratio ~= 1.0 already at the clip bound), which is why 3-sigma clipping alone did
-      # not stop the "Preflight Fail: velocity estimate error" warning. clip_sigma must stay
-      # well under the gate, not at it, to leave margin for filter lag/timing jitter/real
-      # dynamics on top of the pure noise draw:
-      #   test_ratio_at_clip_bound ~= (clip_sigma / gate)^2
-      # velocity_noise_clip_sigma=2.0 -> (2.0/3.0)^2 ~= 0.44 (44% of the reject threshold).
-      # position_noise_clip_sigma=2.0 against EKF2_EVP_GATE=5.0, EKF2_EVP_NOISE=0.01 ->
-      # (2.0/5.0)^2 ~= 0.16 (position wasn't failing, but tightened to match for consistency).
+      # Each noise draw is hard-clipped to +/- clip_sigma * std (per axis); Gaussian in the
+      # bulk, bounded tails. PX4's EKF2 rejects an EV sample once
+      #   |innovation| > EKF2_EVx_GATE * EKF2_EVx_NOISE   (gate: 3.0 vel, 5.0 pos)
+      # The clip guarantees the injected noise alone stays within a fraction beta of that
+      # boundary, leaving the rest for real tracking/pipeline lag:
+      #   clip_sigma = beta * gate * EKF2_EVx_NOISE / std      (use beta ~= 0.5)
+      # With EKF2_EVx_NOISE = max(0.1, std) as above, clip_sigma never needs to exceed
+      # beta*gate = 1.5 (vel) / 2.5 (pos), regardless of the std you pick.
       position_noise_clip_sigma: 2.0
-      velocity_noise_clip_sigma: 2.0
+      velocity_noise_clip_sigma: 1.5
 
       # Publish timing: NOT a fixed rate. Each inter-publish interval is drawn with replacement
       # from this bootstrap pool of real historical sensor dt values (microseconds). Empty path

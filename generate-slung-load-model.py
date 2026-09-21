@@ -27,10 +27,7 @@ ROD_RADIUS_M = 0.004
 ROD_MASS_KG = 0.02  # ~8% of PAYLOAD_MASS_KG=0.25 -- was 0.001 (a ~250:1 ratio to the payload
 # and ~1300:1 to the drone), flagged early on as an untested numerical-solver-instability
 # risk: a near-massless body between two ball joints in series is a known way to get
-# spurious stiffness/energy injection from DART's iterative constraint solver -- consistent
-# with both symptoms observed (pivot appearing to not rotate freely, and the payload/quad
-# system being visibly more chaotic than the real hardware). Still light relative to the
-# payload, just no longer numerically pathological. Sweep further if this doesn't resolve it.
+# spurious stiffness/energy injection from DART's iterative constraint solver
 PAYLOAD_RADIUS_M = 0.035
 PAYLOAD_HEIGHT_M = 0.20
 
@@ -50,8 +47,8 @@ PAYLOAD_HEIGHT_M = 0.20
 # means literal air density once it's this large -- it's sized to reproduce the observed
 # decay rate, not to be physically accurate. Retune by feel; there's no principled way to
 # derive the "right" value here for an unmodeled mechanism.
-AIR_DENSITY_KG_M3 = 1.225
-CD_CROSSFLOW = 20.0 #1.1  # cylinder broadside to the flow (its long axis perpendicular to velocity)
+AIR_DENSITY_KG_M3 = 1.225*4
+CD_CROSSFLOW = 1.1  # cylinder broadside to the flow (its long axis perpendicular to velocity)
 CD_AXIAL = 0.9       # flat-ended cylinder moving along its own long axis
 
 # Openly pragmatic, NOT first-principles like CD_CROSSFLOW/CD_AXIAL above -- the raw

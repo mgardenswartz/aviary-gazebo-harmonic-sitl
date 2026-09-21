@@ -13,6 +13,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GZ_SIM REQUIRED gz-sim8)
 pkg_check_modules(GZ_PLUGIN REQUIRED gz-plugin2)
 pkg_check_modules(GZ_MATH REQUIRED gz-math7)
+pkg_check_modules(GZ_TRANSPORT REQUIRED gz-transport13)
+pkg_check_modules(GZ_MSGS REQUIRED gz-msgs10)
 
 add_library(LocalizedWindPlugin SHARED src/LocalizedWindPlugin.cc)
 target_compile_features(LocalizedWindPlugin PUBLIC cxx_std_17)
@@ -23,18 +25,24 @@ target_include_directories(LocalizedWindPlugin BEFORE PRIVATE
   ${GZ_SIM_INCLUDE_DIRS}
   ${GZ_PLUGIN_INCLUDE_DIRS}
   ${GZ_MATH_INCLUDE_DIRS}
+  ${GZ_TRANSPORT_INCLUDE_DIRS}
+  ${GZ_MSGS_INCLUDE_DIRS}
 )
 
 target_link_directories(LocalizedWindPlugin PRIVATE
   ${GZ_SIM_LIBRARY_DIRS}
   ${GZ_PLUGIN_LIBRARY_DIRS}
   ${GZ_MATH_LIBRARY_DIRS}
+  ${GZ_TRANSPORT_LIBRARY_DIRS}
+  ${GZ_MSGS_LIBRARY_DIRS}
 )
 
 target_link_libraries(LocalizedWindPlugin
   ${GZ_SIM_LIBRARIES}
   ${GZ_PLUGIN_LIBRARIES}
   ${GZ_MATH_LIBRARIES}
+  ${GZ_TRANSPORT_LIBRARIES}
+  ${GZ_MSGS_LIBRARIES}
 )
 
 install(TARGETS LocalizedWindPlugin

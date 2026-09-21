@@ -34,7 +34,7 @@ python3 -m pip install "setuptools==58.2.0"
 python3 -m pip install numpy jax pandas ./resnet
 
 cd /home/root/ros2_ws
-colcon build --symlink-install --packages-select debugging_node vision_odometry_noise
+colcon build --symlink-install --packages-select debugging_node vision_odometry_noise aviary_wind_plugin
 colcon build --symlink-install --cmake-args -DPython3_EXECUTABLE=/home/root/venv_docker/bin/python3 --packages-select aviary_rise_controller
 sed -i '1s|^.*$|#!/home/root/venv_docker/bin/python3|' install/aviary_rise_controller/lib/aviary_rise_controller/aviary_rise_controller
 source /home/root/ros-sources.sh

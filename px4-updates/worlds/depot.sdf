@@ -148,27 +148,36 @@
       </experimental:params>
     </include>
 
-    <!-- Representative wind from the two real K-Tool 42" belt-drive drum fans (14,800 CFM @
-         537 RPM) at world (x,y) = (-2, +2) and (-2, -2), ASSUMED blowing in +X (toward the
-         flight envelope centered on the origin -- traj1 spans x in [-1.5,1.5], y in [-3,3],
-         z(ENU) in [0.5,1.0], per conf/config.yaml). Flip FX sign/rework center/force below if
-         that blow-direction assumption is wrong.
+    <!-- Two K-Tool 42" drum fans at (x,y) = (-2, +2) and (-2, -2), blowing +X toward the
+         origin. <force> is a hand-tuned guess (CFM/throw estimate in git history), not a
+         measurement. base_link and slung_load_link need separate plugin instances because the
+         plugin binds one model+link each. A 1 m buffer around each core fades force to zero. -->
 
-         Exit velocity: Q=14800 CFM=6.985 m^3/s, A=pi*(1.0668/2)^2=0.893 m^2 (42" face) ->
-         v_exit = Q/A ~= 7.8 m/s. Drum fans of this size are rated for long, coherent throw
-         (~60-100 ft usable), so velocity at the ~2-4m fan-to-drone range is assumed to retain
-         roughly half that (~4 m/s), NOT a naive spherical 1/r^2 falloff -- this is an estimate,
-         not a measurement; treat FORCE below the same way AIR_DENSITY_KG_M3 was treated
-         (retune by feel against real data, not first-principles-exact).
+    <!-- Visual-only markers (no collision, no physics): the translucent red boxes are the
+         full-force core of each wind column. Drag the vehicle into one to feel the wind. -->
+    <model name="wind_marker_left">
+      <static>true</static>
+      <pose>-2 2 0.75 0 0 0</pose>
+      <link name="link">
+        <visual name="v">
+          <transparency>0.8</transparency>
+          <geometry><box><size>4.0 1.2 1.2</size></box></geometry>
+          <material><ambient>1 0 0 0.2</ambient><diffuse>1 0 0 0.2</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wind_marker_right">
+      <static>true</static>
+      <pose>-2 -2 0.75 0 0 0</pose>
+      <link name="link">
+        <visual name="v">
+          <transparency>0.8</transparency>
+          <geometry><box><size>4.0 1.2 1.2</size></box></geometry>
+          <material><ambient>1 0 0 0.2</ambient><diffuse>1 0 0 0.2</diffuse></material>
+        </visual>
+      </link>
+    </model>
 
-         Two zones per fan needed (base_link + slung_load_link) since LocalizedWindPlugin binds
-         to exactly one model+link per instance -- both instances target the SAME geometry so
-         the drone body and the hanging payload see the same wind column, just scaled by each
-         body's own frontal area (drone ~0.09 m^2 assumed vs payload's actual 0.014 m^2
-         crossflow area from generate-slung-load-model.py, both at Cd~1, rho=1.225,
-         v=4m/s: F=0.5*rho*Cd*A*v^2). NOTE the plugin's internal RNG is seeded identically
-         (1337, hardcoded) in every instance, so the two links' turbulence draws are perfectly
-         correlated, not independent -- fine for a first pass, but not physically distinct gusts. -->
     <plugin filename="LocalizedWindPlugin" name="aviary::LocalizedWindPlugin">
       <target_model>px4_1</target_model>
       <target_link>base_link</target_link>
@@ -177,7 +186,8 @@
         <center>-2 2 0.75</center>
         <core_size>4.0 1.2 1.2</core_size>
         <buffer>1.0</buffer>
-        <force>0.88 0 0</force>
+        <!--<force>0.88 0 0</force> -->
+        <force>20 0 0</force>
         <noise_std_dev>0.3</noise_std_dev>
       </wind_zone>
       <wind_zone>
@@ -185,7 +195,8 @@
         <center>-2 -2 0.75</center>
         <core_size>4.0 1.2 1.2</core_size>
         <buffer>1.0</buffer>
-        <force>0.88 0 0</force>
+        <!--<force>0.88 0 0</force> -->
+        <force>20 0 0</force>
         <noise_std_dev>0.3</noise_std_dev>
       </wind_zone>
     </plugin>
